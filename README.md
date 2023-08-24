@@ -1,8 +1,8 @@
 
-![iris](https://github.com/plec3d/Iris/assets/142444700/ce664818-925e-42fb-a71e-bbacfbe040fc)
+![iris](https://github.com/plec3d/Iris/assets/142444700/7979822c-495c-4fda-8288-1a58f432f9cd)
 
-# Iris Slicer
-### PLEC Multi-material Color slicer
+
+### Iris -- PLEC Multi-material Color slicer
 ___
 
 TBD
