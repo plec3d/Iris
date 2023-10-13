@@ -327,11 +327,6 @@ public:
     wxBookCtrlBase* tab_panel() const ;
     int             extruders_cnt() const;
     int             extruders_edited_cnt() const;
-    bool            has_mixing_extruders() const;
-    std::vector<std::string> get_stored_mixing_colors();
-    std::vector<std::string> get_mixing_extruder_colors();
-    std::vector<int> virtual_extruders() const;
-    std::vector<unsigned char> mixing_extruders() const;
 
     std::vector<Tab *>      tabs_list;
 

@@ -1,0 +1,55 @@
+name: Build Win64
+
+on: 
+    push:
+      branches: 
+       - master
+        
+
+jobs:
+  build_win64:
+    name: Build Win64
+    runs-on: windows-2019
+
+    steps:
+      - uses: actions/checkout@v3
+      - uses: ilammy/msvc-dev-cmd@v1
+      - name: Install perl
+        run: |
+          choco install strawberryperl
+      - run: mkdir ${{ github.workspace }}/deps/build
+      - name: download deps
+        shell: powershell
+        run: '(new-object System.Net.WebClient).DownloadFile("https://plec.it/wp-content/uploads/PrusaSlicer-deps.zip", "$env:temp\PrusaSlicer-deps.zip")'
+      - name: extract deps
+        working-directory: ${{ github.workspace }}/deps/build
+        shell: cmd
+        run: '"C:/Program Files/7-Zip/7z.exe" x %temp%\PrusaSlicer-deps.zip'
+
+      - run: dir "${{ github.workspace }}\deps\build\"
+      # - name: build deps
+      #   id: cache_deps
+      #   uses: actions/cache@v3
+      #   env:
+      #     cache-name: ${{ runner.os }}-cache-PrusaSlicer-deps
+      #   with:
+      #     path: ${{ github.workspace }}/deps/build/PrusaSlicer_deps
+      #     key: ${{ runner.os }}-build-${{ env.cache-name }}
+
+      # - if: ${{ steps.cache_deps.outputs.cache-hit != 'true' }}
+      #   name: build deps
+      #   working-directory: ${{ github.workspace }}
+      #   continue-on-error: true
+      #   run: .\build_release.bat deps
+   
+      # - run:  Get-ChildItem ${{ github.workspace }}/deps/build/ -Exclude PrusaSlicer_deps | Remove-Item -Recurse -Force
+
+      - name: Build studio
+        working-directory: ${{ github.workspace }}
+        run: .\build_win.bat -d=.\deps\build\PrusaSlicer-deps -c=Release -s=app
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: Iris_Win64_rc
+          path: ${{ github.workspace }}/build/src/Release

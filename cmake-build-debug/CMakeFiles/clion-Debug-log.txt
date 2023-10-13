@@ -1,4 +1,4 @@
-/app/extra/clion/bin/cmake/linux/x64/bin/cmake -DCMAKE_BUILD_TYPE=Debug -DCMAKE_MAKE_PROGRAM=/app/extra/clion/bin/ninja/linux/x64/ninja -G Ninja -S /home/rvmn/Documents/Iris -B /home/rvmn/Documents/Iris/cmake-build-debug
+/app/extra/clion/bin/cmake/linux/x64/bin/cmake -DCMAKE_BUILD_TYPE=Debug -DCMAKE_MAKE_PROGRAM=/app/extra/clion/bin/ninja/linux/x64/ninja -G Ninja -S /home/rvmn/Documents/Iris-main -B /home/rvmn/Documents/Iris-main/cmake-build-debug
 -- The C compiler identification is GNU 12.2.0
 -- The CXX compiler identification is GNU 12.2.0
 -- Detecting C compiler ABI info
@@ -43,4 +43,4 @@ Call Stack (most recent call first):
 
 
 -- Configuring incomplete, errors occurred!
-See also "/home/rvmn/Documents/Iris/cmake-build-debug/CMakeFiles/CMakeOutput.log".
+See also "/home/rvmn/Documents/Iris-main/cmake-build-debug/CMakeFiles/CMakeOutput.log".

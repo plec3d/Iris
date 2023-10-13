@@ -14,6 +14,7 @@
 #include "libslic3r/Model.hpp"
 #include "slic3r/Utils/UndoRedo.hpp"
 
+
 #include <GL/glew.h>
 
 namespace Slic3r::GUI {
@@ -64,19 +65,14 @@ static std::vector<ColorRGBA> get_extruders_colors()
     return ret;
 }
 
-static std::vector<std::string> get_extruders_names(std::vector<int>& m_mixer_extruder_real_ids)
+static std::vector<std::string> get_extruders_names()
 {
     size_t                   extruders_count = wxGetApp().extruders_edited_cnt();
-    std::vector<unsigned char> is_mixing_extruder = wxGetApp().mixing_extruders();
-    std::vector<int> is_virtual_extruder = wxGetApp().virtual_extruders();
     std::vector<std::string> extruders_out;
-    int mixcnt = 0;
     extruders_out.reserve(extruders_count);
-    for (size_t extruder_idx = 0; extruder_idx < extruders_count; extruder_idx++)
-        if(is_mixing_extruder.at(extruder_idx)){
-            m_mixer_extruder_real_ids.push_back(extruder_idx); extruders_out.emplace_back(_u8L("Mixer ") + " " + std::to_string(extruder_idx+1));
-        }else if(is_virtual_extruder.at(extruder_idx) > -1) extruders_out.emplace_back(_u8L("Mixer " + std::to_string(is_virtual_extruder.at(extruder_idx)+1)+" Mix "+ std::to_string(mixcnt++)));
-        else extruders_out.emplace_back(_u8L("Extruder") + " " + std::to_string(extruder_idx +1));
+    for (size_t extruder_idx = 1; extruder_idx <= extruders_count; ++extruder_idx)
+        extruders_out.emplace_back(_u8L("Extruder") + " " + std::to_string(extruder_idx));
+
     return extruders_out;
 }
 
@@ -96,12 +92,9 @@ static std::vector<int> get_extruder_id_for_volumes(const ModelObject &model_obj
 
 void GLGizmoMmuSegmentation::init_extruders_data()
 {
-    m_original_extruders_names     = get_extruders_names(m_mixer_extruder_real_ids);
+    m_original_extruders_names     = get_extruders_names();
     m_original_extruders_colors    = get_extruders_colors();
     m_modified_extruders_colors    = m_original_extruders_colors;
-    m_stored_mixing_colors         = wxGetApp().get_stored_mixing_colors();
-    m_mixing_extruder_colors       = wxGetApp().get_mixing_extruder_colors();
-    m_selected_mixtruder           = 0;
     m_first_selected_extruder_idx  = 0;
     m_second_selected_extruder_idx = 1;
 }
@@ -118,9 +111,6 @@ bool GLGizmoMmuSegmentation::on_init()
     m_desc["first_color"]          = _L("First color");
     m_desc["second_color_caption"] = _L("Right mouse button") + ": ";
     m_desc["second_color"]         = _L("Second color");
-    m_desc["active_mixtruder"]     = _L("Active mixer");
-    m_desc["mixing_colors"]        = _L("Used colors");
-    m_desc["stored_colors"]        = _L("Stored colors");
     m_desc["remove_caption"]       = _L("Shift + Left mouse button") + ": ";
     m_desc["remove"]               = _L("Remove painted color");
     m_desc["remove_all"]           = _L("Clear all");
@@ -218,107 +208,6 @@ void GLGizmoMmuSegmentation::render_triangles(const Selection &selection) const
             glsafe(::glFrontFace(GL_CCW));
     }
 }
-static void render_mixer_color_pickers(std::vector<std::string>& colors, std::vector<std::string>& m_modified_mixer_colors, std::vector<int>& m_mixer_extruder_real_ids, size_t& m_first_selected_extruder_idx, int m_selected_mixtruder){
-    // add a color picker for each model color
-    int i = 0;
-    ImGui::Separator();
-    ImGui::Text("Color palette");
-    for (std::string object_color :m_modified_mixer_colors){ 
-        ColorRGBA RGBAcolor;  
-        decode_color(object_color, RGBAcolor);
-        ImVec4 color = ImGuiWrapper::to_ImVec4(RGBAcolor);
-        int idx = i;
-        char buf[32];
-        sprintf(buf, "color_%i", i);
-        ImGui::BeginGroup();
-        if (ImGui::ColorEdit4(buf, (float*)&color, NULL, ImGuiColorEditFlags_NoAlpha | ImGuiColorEditFlags_NoInputs | ImGuiColorEditFlags_NoLabel,
-            _u8L("Current").c_str(), _u8L("Original").c_str())){
-                std::string new_color = encode_color(to_rgb(ImGuiWrapper::from_ImVec4(color)));
-                //edit the object color
-               colors.at(idx) = new_color;
-                //update_model_object();
-            }
-            if (ImGui::BeginPopupContextItem(buf)) {
-                std::string new_color = encode_color(to_rgb(ImGuiWrapper::from_ImVec4(color)));
-                if (ImGui::MenuItem("Use")){
-                    // create the required virtual extruder
-                    int new_idx = wxGetApp().plater()->id_like_this_virtual_extruder(new_color, m_selected_mixtruder, wxGetApp().extruders_edited_cnt());
-                    //init_extruders_data();
-                    // select the mixing extruder to be active
-                    if(new_idx != -1) m_first_selected_extruder_idx = new_idx;
-                }
-                else if (ImGui::MenuItem("Store")){
-                    // store the color to the profile 
-                    wxGetApp().plater()->store_mixing_color(new_color, m_mixer_extruder_real_ids.at(m_selected_mixtruder));                     
-                }
-                ImGui::EndPopup();
-            }
-            
-
-            /*ImGui::SameLine();
-            if (m_imgui->button(m_desc.at("select_color"))) {
-               
-            }*/
-            
-            ImGui::EndGroup(); 
-            ImGui::SameLine();
-            i++;
-        }
-    if (ImGui::Button("+",ImVec2(50,50))) {
-        // duplicate the last color
-        colors.push_back(colors.at(colors.size()-1));
-        //update_model_object();
-        //m_parent.set_as_dirty();
-    }
-    ImGui::Separator();
-    ImGui::Text("Stored colors");
-
-}
-
-static void render_mixtruder_combo(const std::vector<std::string>& extruders,
-                                   const std::vector<ColorRGBA>& extruders_colors,
-                                   size_t& selection_idx){
-        size_t selection_out = selection_idx;
-
-        // add a selector for the mixing extruders availablerender_mixer_color_pickers
-        ImGui::BeginGroup();
-        ImVec2 combo_pos = ImGui::GetCursorScreenPos();
-        const std::vector<unsigned char> mixers = wxGetApp().mixing_extruders();
-
-        if (ImGui::BeginCombo("", "")) {
-            for (size_t extruder_idx = 0; extruder_idx <extruders.size(); extruder_idx++) {
-                if(mixers.at(extruder_idx)){
-                    ImGui::PushID(int(extruder_idx));
-                    ImVec2 start_position = ImGui::GetCursorScreenPos();
-
-                    if (ImGui::Selectable("", extruder_idx == selection_out))
-                        selection_out = extruder_idx;
-
-                    ImGui::SameLine();
-                    ImGuiStyle &style  = ImGui::GetStyle();
-                    float       height = ImGui::GetTextLineHeight();
-                    //ImGui::GetWindowDrawList()->AddRectFilled(start_position, ImVec2(start_position.x + height + height / 2, start_position.y + height), ImGuiWrapper::to_ImU32(m_original_extruders_colors[extruder_idx]));
-                    //ImGui::GetWindowDrawList()->AddRect(start_position, ImVec2(start_position.x + height + height / 2, start_position.y + height), IM_COL32_BLACK);
-                    ImGui::SetCursorScreenPos(ImVec2(start_position.x + height + height / 2 + style.FramePadding.x, start_position.y));
-                    ImGui::Text("Mixer %i", extruder_idx+1);
-                    ImGui::PopID();
-                }
-            }
-
-            ImGui::EndCombo();
-        }
-        ImVec2      backup_pos = ImGui::GetCursorScreenPos();
-        ImGuiStyle &style      = ImGui::GetStyle();
-        ImGui::SetCursorScreenPos(ImVec2(combo_pos.x + style.FramePadding.x, combo_pos.y + style.FramePadding.y));
-        ImVec2 p      = ImGui::GetCursorScreenPos();
-        float  height = ImGui::GetTextLineHeight();
-        ImGui::SetCursorScreenPos(ImVec2(p.x + height + height / 2 + style.FramePadding.x, p.y));
-        ImGui::Text("Mixer %i", selection_out+1);
-        ImGui::SetCursorScreenPos(backup_pos);
-        ImGui::EndGroup();
-        
-        selection_idx = selection_out;
-}
 
 static void render_extruders_combo(const std::string& label,
                                    const std::vector<std::string>& extruders,
@@ -329,7 +218,6 @@ static void render_extruders_combo(const std::string& label,
     assert(extruders_colors.size() == extruders_colors.size());
 
     size_t selection_out = selection_idx;
-    const std::vector<unsigned char> mixers = wxGetApp().mixing_extruders();
     // It is necessary to use BeginGroup(). Otherwise, when using SameLine() is called, then other items will be drawn inside the combobox.
     ImGui::BeginGroup();
     ImVec2 combo_pos = ImGui::GetCursorScreenPos();
@@ -339,7 +227,7 @@ static void render_extruders_combo(const std::string& label,
             ImVec2 start_position = ImGui::GetCursorScreenPos();
 
             if (ImGui::Selectable("", extruder_idx == selection_idx))
-                if(!mixers.at(extruder_idx)) selection_out = extruder_idx;
+                selection_out = extruder_idx;
 
             ImGui::SameLine();
             ImGuiStyle &style  = ImGui::GetStyle();
@@ -369,38 +257,16 @@ static void render_extruders_combo(const std::string& label,
     ImGui::Text("%s", extruders[selection_out].c_str());
     ImGui::SetCursorScreenPos(backup_pos);
     ImGui::EndGroup();
-    if(mixers.at(selection_out)) selection_out += 1;
+
     selection_idx = selection_out;
-}
-
-std::vector<std::string> split(std::string s, std::string delimiter) {
-    size_t pos_start = 0, pos_end, delim_len = delimiter.length();
-    std::string token;
-    std::vector<std::string> res;
-
-    while ((pos_end = s.find(delimiter, pos_start)) != std::string::npos) {
-        token = s.substr (pos_start, pos_end - pos_start);
-        pos_start = pos_end + delim_len;
-        res.push_back (token);
-    }
-    
-    res.push_back (s.substr (pos_start));
-    return res;
-}
-
-bool joined_has_val(std::string s, std::string delimiter, std::string filter) {
-    std::vector<std::string> res = split(s, delimiter);
-    if (std::find(res.begin(), res.end(), filter) != res.end())
-        return true;
-    return false;
 }
 
 void GLGizmoMmuSegmentation::on_render_input_window(float x, float y, float bottom_limit)
 {
     if (!m_c->selection_info()->model_object())
         return;
-    
-    const float approx_height = m_imgui->scaled(32.0f + m_modified_extruders_colors.size() + m_stored_mixing_colors.size());
+
+    const float approx_height = m_imgui->scaled(22.0f);
                             y = std::min(y, bottom_limit - approx_height);
     m_imgui->set_next_window_pos(x, y, ImGuiCond_Always);
 
@@ -469,7 +335,7 @@ void GLGizmoMmuSegmentation::on_render_input_window(float x, float y, float bott
     const ColorRGBA& select_first_color = m_modified_extruders_colors[m_first_selected_extruder_idx];
     ImVec4           first_color        = ImGuiWrapper::to_ImVec4(select_first_color);
     const std::string first_label       = into_u8(m_desc.at("first_color")) + "##color_picker";
-    if (ImGui::ColorEdit4(first_label.c_str(), (float*)&first_color, NULL, ImGuiColorEditFlags_NoAlpha | ImGuiColorEditFlags_NoInputs | ImGuiColorEditFlags_NoLabel | ImGuiColorEditFlags_PickerHueWheel,
+    if (ImGui::ColorEdit4(first_label.c_str(), (float*)&first_color, ImGuiColorEditFlags_NoAlpha | ImGuiColorEditFlags_NoInputs | ImGuiColorEditFlags_NoLabel,
         // TRN Means "current color"
         _u8L("Current").c_str(),
         // TRN Means "original color"
@@ -486,171 +352,17 @@ void GLGizmoMmuSegmentation::on_render_input_window(float x, float y, float bott
     const ColorRGBA& select_second_color = m_modified_extruders_colors[m_second_selected_extruder_idx];
     ImVec4           second_color        = ImGuiWrapper::to_ImVec4(select_second_color);
     const std::string second_label       = into_u8(m_desc.at("second_color")) + "##color_picker";
-    if (ImGui::ColorEdit4(second_label.c_str(), (float*)&second_color, NULL, ImGuiColorEditFlags_NoAlpha | ImGuiColorEditFlags_NoInputs | ImGuiColorEditFlags_NoLabel | ImGuiColorEditFlags_PickerHueWheel,
+    if (ImGui::ColorEdit4(second_label.c_str(), (float*)&second_color, ImGuiColorEditFlags_NoAlpha | ImGuiColorEditFlags_NoInputs | ImGuiColorEditFlags_NoLabel,
         _u8L("Current").c_str(), _u8L("Original").c_str()))
         m_modified_extruders_colors[m_second_selected_extruder_idx] = ImGuiWrapper::from_ImVec4(second_color);
 
     const float max_tooltip_width = ImGui::GetFontSize() * 20.0f;
-    ModelObject *        mo  = m_c->selection_info()->model_object();
-    m_model_colors = mo->m_model->colors;
-    
-    if(wxGetApp().has_mixing_extruders()){
-        
-        ImGui::Separator();
-        m_imgui->text(m_desc.at("active_mixtruder"));
-    
-        render_mixtruder_combo(m_original_extruders_names, m_original_extruders_colors, m_selected_mixtruder);
-        //render_mixer_color_pickers(mo->colors, m_modified_mixer_colors, m_mixer_extruder_real_ids, m_first_selected_extruder_idx, m_selected_mixtruder);
-        int i = 0;
-    ImGui::Separator();
-    ImGui::Text("Color palette");
-    /*if(m_model_colors.size() == 0){
-            std::vector<std::string> colors_strings = m_stored_mixing_colors;
-            for (std::string colors_string : colors_strings){
-                std::vector<std::string> colors = split(colors_string, "/");
-                m_model_colors.reserve(m_model_colors.size() + colors.size());
-                m_model_colors.insert(m_model_colors.end(), colors.begin(), colors.end());
-            }
-    }*/
 
-        float tmp[12];// = {NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL};
-    if(m_stored_mixing_colors.size()>0 && m_mixing_extruder_colors.at(m_selected_mixtruder) != ""){
-            std::vector<std::string> mixing_extruder_colors = split(m_mixing_extruder_colors.at(m_selected_mixtruder), "/");
-            ColorRGB colr;
-            int tmpcnt = 0;
-            for(std::string color: mixing_extruder_colors)
-                if(color!=""){
-                    decode_color(color,colr);
-                    tmp[tmpcnt++] = colr.r();
-                    tmp[tmpcnt++] = colr.g();
-                    tmp[tmpcnt++] = colr.b();
-                }
-        }
-    for (std::string object_color : m_model_colors){
-        ColorRGBA RGBAcolor;  
-        decode_color(object_color, RGBAcolor);
-        ImVec4 color = ImGuiWrapper::to_ImVec4(RGBAcolor);
-        int idx = i;
-        char buf[32];
-        sprintf(buf, "color_%i", i);
-        ImGui::BeginGroup();
-        if (ImGui::ColorEdit4(buf, (float*)&color, tmp, ImGuiColorEditFlags_NoAlpha | ImGuiColorEditFlags_NoInputs | ImGuiColorEditFlags_NoLabel | ImGuiColorEditFlags_PickerHueWheel,
-            _u8L("Current").c_str(), _u8L("Original").c_str())){
-                std::string new_color = encode_color(to_rgb(ImGuiWrapper::from_ImVec4(color)));
-                //edit the object color
-                mo->m_model->colors.at(idx) = new_color;
-                update_model_object();
-            }
-            if (ImGui::BeginPopupContextItem(buf)) {
-                std::string new_color = encode_color(to_rgb(ImGuiWrapper::from_ImVec4(color)));
-                if (ImGui::MenuItem("Use")){
-                    // create the required virtual extruder
-                    int new_idx = wxGetApp().plater()->id_like_this_virtual_extruder(new_color, m_selected_mixtruder, wxGetApp().extruders_edited_cnt());
-                    init_extruders_data();
-                    // select the mixing extruder to be active
-                    if(new_idx != -1) m_first_selected_extruder_idx = new_idx;
-                }
-                else if (ImGui::MenuItem("Duplicate")){
-                    mo->m_model->colors.push_back(mo->m_model->colors.at(mo->m_model->colors.size()-1));
-                    update_model_object();           
-                }
-                else if (ImGui::MenuItem("Store")){
-                    // store the color to the profile 
-                    wxGetApp().plater()->store_mixing_color(new_color, m_mixer_extruder_real_ids.at(m_selected_mixtruder)); 
-                    init_extruders_data();           
-                }
-                ImGui::EndPopup();
-            }
-            
-
-            /*ImGui::SameLine();
-            if (m_imgui->button(m_desc.at("select_color"))) {
-               
-            }*/
-            
-            ImGui::EndGroup(); 
-            if(++i % 9 != 0) ImGui::SameLine();
-        }
-    if (ImGui::Button("+",ImVec2(20,20))) {
-        // duplicate the last color
-        //if(mo->m_model->colors.size()>0) mo->m_model->colors.push_back(mo->m_model->colors.at(mo->m_model->colors.size()-1));
-        mo->m_model->colors.push_back("#FFFFFF");
-        update_model_object();
-        //m_parent.set_as_dirty();
-    }
     ImGui::Separator();
-    ImGui::Text("Stored colors");
-    //int mixid = 0;
-    int extruderid = 0;
-    std::vector<unsigned char> is_mixing_extruder = wxGetApp().mixing_extruders();
-    for (std::string colors_string :m_stored_mixing_colors){
-        // split the string by slashes
-        std::vector<std::string> colors = split(colors_string, "/");
-        
-        // add each color with the mixerid
-        if(is_mixing_extruder.at(extruderid) && colors.size()>1){
-            int j = 0;
-            int mixerid = extruderid+1;
-            char buf[32];
-            //if(mixid!=0) ImGui::NewLine();
-            //sprintf(buf, "Mixer %i", (mixerid));
-            //ImGui::Text(buf);
-            for(std::string object_color :colors){
-                if(object_color == "") continue;
-            ColorRGBA RGBAcolor;  
-            decode_color(object_color, RGBAcolor);
-            ImVec4 color = ImGuiWrapper::to_ImVec4(RGBAcolor);
-            int idx = j;
-            sprintf(buf, "scolor_%i", j);
-            ImGui::BeginGroup();
-            if (ImGui::ColorEdit4(buf, (float*)&color, NULL, ImGuiColorEditFlags_NoAlpha | ImGuiColorEditFlags_NoInputs | ImGuiColorEditFlags_NoLabel | ImGuiColorEditFlags_PickerHueWheel,
-                _u8L("Current").c_str(), _u8L("Original").c_str())){
-                    std::string new_color = encode_color(to_rgb(ImGuiWrapper::from_ImVec4(color)));
-                    //edit the object color
-                    wxGetApp().plater()->store_mixing_color(new_color, m_selected_mixtruder, i);
-                    init_extruders_data(); 
-                }
-                if (ImGui::BeginPopupContextItem(buf)) {
-                    std::string new_color = encode_color(to_rgb(ImGuiWrapper::from_ImVec4(color)));
-                    if (ImGui::MenuItem("Load")){
-                        mo->m_model->colors.push_back(new_color);
-                        // create the required virtual extruder
-                        //int new_idx = wxGetApp().plater()->id_like_this_virtual_extruder(new_color, m_selected_mixtruder, wxGetApp().extruders_edited_cnt());
-                        init_extruders_data();
-                        // select the mixing extruder to be active
-                        //if(new_idx != -1) m_first_selected_extruder_idx = new_idx;
-                    }
-                    else if (ImGui::MenuItem("Delete")){
-                        // delete the color to the profile
-                        std::string empty_string = "";
-                        wxGetApp().plater()->store_mixing_color(empty_string, m_selected_mixtruder, i);
-                        init_extruders_data();                  
-                    }
-                    ImGui::EndPopup();
-                }
-                
-                ImGui::EndGroup(); 
-                ImGui::SameLine();
-                if(j == colors.size()-2) break;
-                j++;
-            }
-        /*if (ImGui::Button("+",ImVec2(50,50))) {
-            // duplicate the last color
-            colors.push_back(colors.at(colors.size()-1));
-            update_model_object();
-            //m_parent.set_as_dirty();
-        }*/
-    //mixid++;
-    }
-    extruderid++;
-    }
 
-    }
-   
-    ImGui::NewLine();
-    ImGui::Separator();
     m_imgui->text(m_desc.at("tool_type"));
     ImGui::NewLine();
+
     float tool_type_offset = (window_width - tool_type_radio_brush - tool_type_radio_bucket_fill - tool_type_radio_smart_fill + m_imgui->scaled(1.5f)) / 2.f;
     ImGui::SameLine(tool_type_offset);
     ImGui::PushItemWidth(tool_type_radio_brush);

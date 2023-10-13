@@ -1258,7 +1258,7 @@ bool GUI_App::on_init_inner()
 
         // create splash screen with updated bmp
         scrn = new SplashScreen(bmp.IsOk() ? bmp : get_bmp_bundle("PrusaSlicer", 400)->GetPreferredBitmapSizeAtScale(1.0), 
-                                wxSPLASH_CENTRE_ON_SCREEN | wxSPLASH_TIMEOUT | wxSTAY_ON_TOP, 8000, splashscreen_pos);
+                                wxSPLASH_CENTRE_ON_SCREEN | wxSPLASH_TIMEOUT, 4000, splashscreen_pos);
 
         if (!default_splashscreen_pos)
             // revert "restore_win_position" value if application wasn't crashed
@@ -3008,55 +3008,6 @@ int GUI_App::extruders_edited_cnt() const
     const Preset& preset = preset_bundle->printers.get_edited_preset();
     return preset.printer_technology() == ptSLA ? 1 :
            preset.config.option<ConfigOptionFloats>("nozzle_diameter")->values.size();
-}
-
-std::vector<std::string> GUI_App::get_stored_mixing_colors(){
-    const Preset& preset = preset_bundle->printers.get_edited_preset();
-    return preset.config.option<ConfigOptionStrings>("stored_mixing_colors")->values;
-}
-
-std::vector<std::string> GUI_App::get_mixing_extruder_colors(){
-    std::vector<std::string> out;// = {"#FFFFFF/#FF0000/#00FF00/#0000FF"};
-    const Preset& preset = preset_bundle->printers.get_edited_preset();
-    std::vector<int> colorcnt = preset.config.option<ConfigOptionInts>("multi_extruder_colors")->values;
-    int cnt = 0;
-    for(int colors: colorcnt){
-        if(colors>0){ 
-            ColorRGB tmp_col;
-            std::string tmp;
-            char buf[32];
-            for(int i = 1;i<=colors;i++){
-                sprintf(buf,"multi_extruder_color%i",i);
-                std::vector<std::string> ext_colors = preset.config.option<ConfigOptionStrings>(buf)->values;
-                if(ext_colors.at(cnt)!="") tmp += ext_colors.at(cnt) + (i<colors?"/":"");
-            }
-            out.push_back(tmp);
-        }
-        cnt++;
-    }
-    return out;
-}
-
-bool GUI_App::has_mixing_extruders() const
-{
-    const Preset& preset = preset_bundle->printers.get_edited_preset();
-    for(bool is_mixing: preset.config.option<ConfigOptionBools>("mixing_extruder")->values)
-        if(is_mixing) return true;
-    return false;
-}
-
-// get mixing extruder ids
-std::vector<int> GUI_App::virtual_extruders() const
-{
-    const Preset& preset = preset_bundle->printers.get_edited_preset();
-    return preset.config.option<ConfigOptionInts>("virtual_extruder")->values;
-}
-
-// get mixing extruder ids
-std::vector<unsigned char> GUI_App::mixing_extruders() const
-{
-    const Preset& preset = preset_bundle->printers.get_edited_preset();
-    return preset.config.option<ConfigOptionBools>("mixing_extruder")->values;
 }
 
 wxString GUI_App::current_language_code_safe() const

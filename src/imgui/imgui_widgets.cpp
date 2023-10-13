@@ -4683,13 +4683,13 @@ bool ImGui::InputTextEx(const char* label, const char* hint, char* buf, int buf_
 
 bool ImGui::ColorEdit3(const char* label, float col[3], ImGuiColorEditFlags flags)
 {
-    return ColorEdit4(label, col, NULL, flags | ImGuiColorEditFlags_NoAlpha);
+    return ColorEdit4(label, col, flags | ImGuiColorEditFlags_NoAlpha);
 }
 
 // Edit colors components (each component in 0.0f..1.0f range).
 // See enum ImGuiColorEditFlags_ for available options. e.g. Only access 3 floats if ImGuiColorEditFlags_NoAlpha flag is set.
 // With typical options: Left-click on color square to open color picker. Right-click to open option menu. CTRL-Click over input fields to edit them and TAB to go to next item.
-bool ImGui::ColorEdit4(const char* label, float col[4], float inp[12], ImGuiColorEditFlags flags, const char* current_label/* = NULL*/, const char* original_label/* = NULL*/)
+bool ImGui::ColorEdit4(const char* label, float col[4], ImGuiColorEditFlags flags, const char* current_label/* = NULL*/, const char* original_label/* = NULL*/)
 {
     ImGuiWindow* window = GetCurrentWindow();
     if (window->SkipItems)
@@ -4859,7 +4859,7 @@ bool ImGui::ColorEdit4(const char* label, float col[4], float inp[12], ImGuiColo
             ImGuiColorEditFlags picker_flags_to_forward = ImGuiColorEditFlags__DataTypeMask | ImGuiColorEditFlags__PickerMask | ImGuiColorEditFlags__InputMask | ImGuiColorEditFlags_HDR | ImGuiColorEditFlags_NoAlpha | ImGuiColorEditFlags_AlphaBar;
             ImGuiColorEditFlags picker_flags = (flags_untouched & picker_flags_to_forward) | ImGuiColorEditFlags__DisplayMask | ImGuiColorEditFlags_NoLabel | ImGuiColorEditFlags_AlphaPreviewHalf;
             SetNextItemWidth(square_sz * 12.0f); // Use 256 + bar sizes?
-            value_changed |= ColorPicker4("##picker", col, inp, picker_flags, &g.ColorPickerRef.x);
+            value_changed |= ColorPicker4("##picker", col, picker_flags, &g.ColorPickerRef.x, current_label, original_label);
             EndPopup();
         }
     }
@@ -4932,7 +4932,7 @@ bool ImGui::ColorEdit4(const char* label, float col[4], float inp[12], ImGuiColo
 bool ImGui::ColorPicker3(const char* label, float col[3], ImGuiColorEditFlags flags)
 {
     float col4[4] = { col[0], col[1], col[2], 1.0f };
-    if (!ColorPicker4(label, col4, NULL, flags | ImGuiColorEditFlags_NoAlpha))
+    if (!ColorPicker4(label, col4, flags | ImGuiColorEditFlags_NoAlpha))
         return false;
     col[0] = col4[0]; col[1] = col4[1]; col[2] = col4[2];
     return true;
@@ -4952,7 +4952,7 @@ static void RenderArrowsForVerticalBar(ImDrawList* draw_list, ImVec2 pos, ImVec2
 // (In C++ the 'float col[4]' notation for a function argument is equivalent to 'float* col', we only specify a size to facilitate understanding of the code.)
 // FIXME: we adjust the big color square height based on item width, which may cause a flickering feedback loop (if automatic height makes a vertical scrollbar appears, affecting automatic width..)
 // FIXME: this is trying to be aware of style.Alpha but not fully correct. Also, the color wheel will have overlapping glitches with (style.Alpha < 1.0)
-bool ImGui::ColorPicker4(const char* label, float col[4], float inp[12], ImGuiColorEditFlags flags, const float* ref_col, const char* current_label/*=NULL*/, const char* original_label/*=NULL*/)
+bool ImGui::ColorPicker4(const char* label, float col[4], ImGuiColorEditFlags flags, const float* ref_col, const char* current_label/*=NULL*/, const char* original_label/*=NULL*/)
 {
     ImGuiContext& g = *GImGui;
     ImGuiWindow* window = GetCurrentWindow();
@@ -5126,13 +5126,13 @@ bool ImGui::ColorPicker4(const char* label, float col[4], float inp[12], ImGuiCo
         PushItemFlag(ImGuiItemFlags_NoNavDefaultFocus, true);
         ImVec4 col_v4(col[0], col[1], col[2], (flags & ImGuiColorEditFlags_NoAlpha) ? 1.0f : col[3]);
         if ((flags & ImGuiColorEditFlags_NoLabel))
-            Text("Current");
+            Text("%s", current_label ? current_label : "Current");
 
         ImGuiColorEditFlags sub_flags_to_forward = ImGuiColorEditFlags__InputMask | ImGuiColorEditFlags_HDR | ImGuiColorEditFlags_AlphaPreview | ImGuiColorEditFlags_AlphaPreviewHalf | ImGuiColorEditFlags_NoTooltip;
         ColorButton("##current", col_v4, (flags & sub_flags_to_forward), ImVec2(square_sz * 3, square_sz * 2));
         if (ref_col != NULL)
         {
-            Text("Original");
+            Text("%s", original_label ? original_label : "Original");
             ImVec4 ref_col_v4(ref_col[0], ref_col[1], ref_col[2], (flags & ImGuiColorEditFlags_NoAlpha) ? 1.0f : ref_col[3]);
             if (ColorButton("##original", ref_col_v4, (flags & sub_flags_to_forward), ImVec2(square_sz * 3, square_sz * 2)))
             {
@@ -5170,7 +5170,7 @@ bool ImGui::ColorPicker4(const char* label, float col[4], float inp[12], ImGuiCo
         ImGuiColorEditFlags sub_flags_to_forward = ImGuiColorEditFlags__DataTypeMask | ImGuiColorEditFlags__InputMask | ImGuiColorEditFlags_HDR | ImGuiColorEditFlags_NoAlpha | ImGuiColorEditFlags_NoOptions | ImGuiColorEditFlags_NoSmallPreview | ImGuiColorEditFlags_AlphaPreview | ImGuiColorEditFlags_AlphaPreviewHalf;
         ImGuiColorEditFlags sub_flags = (flags & sub_flags_to_forward) | ImGuiColorEditFlags_NoPicker;
         if (flags & ImGuiColorEditFlags_DisplayRGB || (flags & ImGuiColorEditFlags__DisplayMask) == 0)
-            if (ColorEdit4("##rgb", col, NULL, sub_flags | ImGuiColorEditFlags_DisplayRGB))
+            if (ColorEdit4("##rgb", col, sub_flags | ImGuiColorEditFlags_DisplayRGB))
             {
                 // FIXME: Hackily differentiating using the DragInt (ActiveId != 0 && !ActiveIdAllowOverlap) vs. using the InputText or DropTarget.
                 // For the later we don't want to run the hue-wrap canceling code. If you are well versed in HSV picker please provide your input! (See #2050)
@@ -5178,9 +5178,9 @@ bool ImGui::ColorPicker4(const char* label, float col[4], float inp[12], ImGuiCo
                 value_changed = true;
             }
         if (flags & ImGuiColorEditFlags_DisplayHSV || (flags & ImGuiColorEditFlags__DisplayMask) == 0)
-            value_changed |= ColorEdit4("##hsv", col, NULL, sub_flags | ImGuiColorEditFlags_DisplayHSV);
+            value_changed |= ColorEdit4("##hsv", col, sub_flags | ImGuiColorEditFlags_DisplayHSV);
         if (flags & ImGuiColorEditFlags_DisplayHex || (flags & ImGuiColorEditFlags__DisplayMask) == 0)
-            value_changed |= ColorEdit4("##hex", col, NULL, sub_flags | ImGuiColorEditFlags_DisplayHex);
+            value_changed |= ColorEdit4("##hex", col, sub_flags | ImGuiColorEditFlags_DisplayHex);
         PopItemWidth();
     }
 
@@ -5227,38 +5227,7 @@ bool ImGui::ColorPicker4(const char* label, float col[4], float inp[12], ImGuiCo
     const ImU32 col_black = IM_COL32(0,0,0,style_alpha8);
     const ImU32 col_white = IM_COL32(255,255,255,style_alpha8);
     const ImU32 col_midgrey = IM_COL32(128,128,128,style_alpha8);
-    ImU32 col_hues[6 + 1];
-    float size = 6;
-    if(inp!=NULL && inp[0]!=NULL){
-        //int size = (sizeof(inp)/sizeof(*inp));
-        /*for (int i = 0;i<12; i+=3){
-            if(inp[i]!=NULL){
-                col_hues[(int)size++] = IM_COL32((int)inp[i],(int)inp[i+1],(int)inp[i+2],style_alpha8);
-                if(i!=9) col_hues[(int)size++] = IM_COL32((int)(inp[i]+inp[i+3])/2,(int)(inp[i+1]+inp[i+4])/2,(int)(inp[i+2]+inp[i+5])/2,style_alpha8);
-            }
-        }
-        /*if(size<7)
-            for(int i = size; i < 6; i++)
-                col_hues[i] = col_hues[size-i];*/
-        col_hues[0] = IM_COL32(255,0,0,style_alpha8);
-        col_hues[1] = IM_COL32(255,255,0,style_alpha8);
-        col_hues[2] = IM_COL32(0,255,0,style_alpha8);
-        col_hues[3] = IM_COL32(0,191,64,style_alpha8);
-        col_hues[4] = IM_COL32(0,128,128,style_alpha8);
-        col_hues[5] = IM_COL32(128,64,64,style_alpha8);
-        col_hues[6] = IM_COL32(255,0,0,style_alpha8);
-        size = 6;
-    }else{
-        col_hues[0] = IM_COL32(255,0,0,style_alpha8);
-        col_hues[1] = IM_COL32(255,255,0,style_alpha8);
-        col_hues[2] = IM_COL32(0,255,0,style_alpha8);
-        col_hues[3] = IM_COL32(0,255,255,style_alpha8);
-        col_hues[4] = IM_COL32(0,0,255,style_alpha8);
-        col_hues[5] = IM_COL32(255,0,255,style_alpha8);
-        col_hues[6] = IM_COL32(255,0,0,style_alpha8);
-        size = 6;
-    }
-    //const ImU32 col_hues[6 + 1] = {col_hues_t[0],col_hues_t[1],col_hues_t[2],col_hues_t[3],col_hues_t[4],col_hues_t[5],col_hues_t[6]};
+    const ImU32 col_hues[6 + 1] = { IM_COL32(255,0,0,style_alpha8), IM_COL32(255,255,0,style_alpha8), IM_COL32(0,255,0,style_alpha8), IM_COL32(0,255,255,style_alpha8), IM_COL32(0,0,255,style_alpha8), IM_COL32(255,0,255,style_alpha8), IM_COL32(255,0,0,style_alpha8) };
 
     ImVec4 hue_color_f(1, 1, 1, style.Alpha); ColorConvertHSVtoRGB(H, 1, 1, hue_color_f.x, hue_color_f.y, hue_color_f.z);
     ImU32 hue_color32 = ColorConvertFloat4ToU32(hue_color_f);
@@ -5270,11 +5239,11 @@ bool ImGui::ColorPicker4(const char* label, float col[4], float inp[12], ImGuiCo
     {
         // Render Hue Wheel
         const float aeps = 0.5f / wheel_r_outer; // Half a pixel arc length in radians (2pi cancels out).
-        const int segment_per_arc = ImMax(8, (int)wheel_r_outer / (int)size*2);
-        for (int n = 0; n < size; n++)
+        const int segment_per_arc = ImMax(4, (int)wheel_r_outer / 12);
+        for (int n = 0; n < 6; n++)
         {
-            const float a0 = (n)     /size * 2.0f * IM_PI - aeps;
-            const float a1 = (n+1.0f)/size * 2.0f * IM_PI + aeps;
+            const float a0 = (n)     /6.0f * 2.0f * IM_PI - aeps;
+            const float a1 = (n+1.0f)/6.0f * 2.0f * IM_PI + aeps;
             const int vert_start_idx = draw_list->VtxBuffer.Size;
             draw_list->PathArcTo(wheel_center, (wheel_r_inner + wheel_r_outer)*0.5f, a0, a1, segment_per_arc);
             draw_list->PathStroke(col_white, 0, wheel_thickness);
@@ -5301,10 +5270,13 @@ bool ImGui::ColorPicker4(const char* label, float col[4], float inp[12], ImGuiCo
         ImVec2 trb = wheel_center + ImRotate(triangle_pb, cos_hue_angle, sin_hue_angle);
         ImVec2 trc = wheel_center + ImRotate(triangle_pc, cos_hue_angle, sin_hue_angle);
         ImVec2 uv_white = GetFontTexUvWhitePixel();
-        draw_list->PrimReserve(3, 3);
+        draw_list->PrimReserve(6, 6);
         draw_list->PrimVtx(tra, uv_white, hue_color32);
-        draw_list->PrimVtx(trb, uv_white, col_black);
+        draw_list->PrimVtx(trb, uv_white, hue_color32);
         draw_list->PrimVtx(trc, uv_white, col_white);
+        draw_list->PrimVtx(tra, uv_white, 0);
+        draw_list->PrimVtx(trb, uv_white, col_black);
+        draw_list->PrimVtx(trc, uv_white, 0);
         draw_list->AddTriangle(tra, trb, trc, col_midgrey, 1.5f);
         sv_cursor_pos = ImLerp(ImLerp(trc, tra, ImSaturate(S)), trb, ImSaturate(1 - V));
     }
@@ -5318,18 +5290,18 @@ bool ImGui::ColorPicker4(const char* label, float col[4], float inp[12], ImGuiCo
         sv_cursor_pos.y = ImClamp(IM_ROUND(picker_pos.y + ImSaturate(1 - V) * sv_picker_size), picker_pos.y + 2, picker_pos.y + sv_picker_size - 2);
 
         // Render Hue Bar
-        for (int i = 0; i < size; ++i)
-            draw_list->AddRectFilledMultiColor(ImVec2(bar0_pos_x, picker_pos.y + i * (sv_picker_size / size)), ImVec2(bar0_pos_x + bars_width, picker_pos.y + (i + 1) * (sv_picker_size / size)), col_hues[i], col_hues[i], col_hues[i + 1], col_hues[i + 1]);
+        for (int i = 0; i < 6; ++i)
+            draw_list->AddRectFilledMultiColor(ImVec2(bar0_pos_x, picker_pos.y + i * (sv_picker_size / 6)), ImVec2(bar0_pos_x + bars_width, picker_pos.y + (i + 1) * (sv_picker_size / 6)), col_hues[i], col_hues[i], col_hues[i + 1], col_hues[i + 1]);
         float bar0_line_y = IM_ROUND(picker_pos.y + H * sv_picker_size);
         RenderFrameBorder(ImVec2(bar0_pos_x, picker_pos.y), ImVec2(bar0_pos_x + bars_width, picker_pos.y + sv_picker_size), 0.0f);
         RenderArrowsForVerticalBar(draw_list, ImVec2(bar0_pos_x - 1, bar0_line_y), ImVec2(bars_triangles_half_sz + 1, bars_triangles_half_sz), bars_width + 2.0f, style.Alpha);
     }
 
     // Render cursor/preview circle (clamp S/V within 0..1 range because floating points colors may lead HSV values to be out of range)
-    float sv_cursor_rad = value_changed_sv ? 10.0f : size;
-    draw_list->AddCircleFilled(sv_cursor_pos, sv_cursor_rad, user_col32_striped_of_alpha, size*2);
-    draw_list->AddCircle(sv_cursor_pos, sv_cursor_rad + 1, col_midgrey, size*2);
-    draw_list->AddCircle(sv_cursor_pos, sv_cursor_rad, col_white, size*2);
+    float sv_cursor_rad = value_changed_sv ? 10.0f : 6.0f;
+    draw_list->AddCircleFilled(sv_cursor_pos, sv_cursor_rad, user_col32_striped_of_alpha, 12);
+    draw_list->AddCircle(sv_cursor_pos, sv_cursor_rad + 1, col_midgrey, 12);
+    draw_list->AddCircle(sv_cursor_pos, sv_cursor_rad, col_white, 12);
 
     // Render alpha bar
     if (alpha_bar)
@@ -5572,7 +5544,7 @@ void ImGui::ColorPickerOptionsPopup(const float* ref_col, ImGuiColorEditFlags fl
             SetCursorScreenPos(backup_pos);
             ImVec4 previewing_ref_col;
             memcpy(&previewing_ref_col, ref_col, sizeof(float) * ((picker_flags & ImGuiColorEditFlags_NoAlpha) ? 3 : 4));
-            ColorPicker4("##previewing_picker", &previewing_ref_col.x, NULL, picker_flags);
+            ColorPicker4("##previewing_picker", &previewing_ref_col.x, picker_flags);
             PopID();
         }
         PopItemWidth();

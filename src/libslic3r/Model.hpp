@@ -329,13 +329,6 @@ class ModelObject final : public ObjectBase
 public:
     std::string             name;
     std::string             input_file;    // XXX: consider fs::path
-
-    // used mixing extruder colors
-    std::vector<std::string> colors;// = {"#FF0000","#00FF00","#0000FF"};
-
-    // Parent object, owning this ModelObject. Set to nullptr here, so the macros above will have it initialized.
-    Model                *m_model { nullptr };
-
     // Instances of this ModelObject. Each instance defines a shift on the print bed, rotation around the Z axis and a uniform scaling.
     // Instances are owned by this ModelObject.
     ModelInstancePtrs       instances;
@@ -606,6 +599,9 @@ private:
     }
 
     OBJECTBASE_DERIVED_COPY_MOVE_CLONE(ModelObject)
+
+    // Parent object, owning this ModelObject. Set to nullptr here, so the macros above will have it initialized.
+    Model                *m_model { nullptr };
 
     // Bounding box, cached.
     mutable BoundingBoxf3 m_bounding_box_approx;
@@ -1258,9 +1254,6 @@ public:
     ModelObjectPtrs     objects;
     // Wipe tower object.
     ModelWipeTower	    wipe_tower;
-
-    // used mixing extruder colors
-    std::vector<std::string> colors;// = {"#FF0000","#00FF00","#0000FF"};
 
     // Extensions for color print
     CustomGCode::Info custom_gcode_per_print_z;

@@ -16,28 +16,6 @@
 
 namespace Slic3r {
 
-std::vector<std::string> split(std::string s, std::string delimiter) {
-    size_t pos_start = 0, pos_end, delim_len = delimiter.length();
-    std::string token;
-    std::vector<std::string> res;
-
-    while ((pos_end = s.find(delimiter, pos_start)) != std::string::npos) {
-        token = s.substr (pos_start, pos_end - pos_start);
-        pos_start = pos_end + delim_len;
-        res.push_back (token);
-    }
-    
-    res.push_back (s.substr (pos_start));
-    return res;
-}
-
-bool joined_has_val(std::string s, std::string delimiter, std::string filter) {
-    std::vector<std::string> res = split(s, delimiter);
-    if (std::find(res.begin(), res.end(), filter) != res.end())
-        return true;
-    return false;
-}
-
 static t_config_enum_names enum_names_from_keys_map(const t_config_enum_values &enum_keys_map)
 {
     t_config_enum_names names;
@@ -942,65 +920,6 @@ void PrintConfigDef::init_fff_params()
     // Empty string means no color assigned yet.
     def->set_default_value(new ConfigOptionStrings { "" });
 
-    def = this->add("multi_extruder_colors", coInts);
-    def->label = L("Multi extruder color count");
-    def->min = 0;
-    def->max = 4;
-    def->tooltip = L("Set the amount of colors your multi-extruder uses");
-    //def->gui_type = ConfigOptionDef::GUIType::color;
-    // Empty string means no color assigned yet.
-    def->set_default_value(new ConfigOptionInts{0});
-
-    def = this->add("multi_extruder_color1", coStrings);
-    def->label = L("Multi extruder color");
-    def->tooltip = L("This is only used in the Slic3r interface as a visual help.");
-    def->gui_type = ConfigOptionDef::GUIType::color;
-    // Empty string means no color assigned yet.
-    def->set_default_value(new ConfigOptionStrings { "" });
-
-    def = this->add("multi_extruder_color2", coStrings);
-    def->label = L("Multi extruder color");
-    def->tooltip = L("This is only used in the Slic3r interface as a visual help.");
-    def->gui_type = ConfigOptionDef::GUIType::color;
-    // Empty string means no color assigned yet.
-    def->set_default_value(new ConfigOptionStrings { "" });
-
-    def = this->add("multi_extruder_color3", coStrings);
-    def->label = L("Multi extruder color");
-    def->tooltip = L("This is only used in the Slic3r interface as a visual help.");
-    def->gui_type = ConfigOptionDef::GUIType::color;
-    // Empty string means no color assigned yet.
-    def->set_default_value(new ConfigOptionStrings { "" });
-
-    def = this->add("multi_extruder_color4", coStrings);
-    def->label = L("Multi extruder color");
-    def->tooltip = L("This is only used in the Slic3r interface as a visual help.");
-    def->gui_type = ConfigOptionDef::GUIType::color;
-    // Empty string means no color assigned yet.
-    def->set_default_value(new ConfigOptionStrings { "" });
-    
-    def = this->add("stored_mixing_colors", coStrings);
-    def->label = L("Mixing extruder colors stored");
-    def->tooltip = L("This is only used in the Slic3r interface as a visual help.");
-    //def->gui_type = ConfigOptionDef::GUIType::color;
-    // Empty string means no color assigned yet.
-    def->set_default_value(new ConfigOptionStrings { "" });
-
-    def = this->add("virtual_extruder", coInts);
-    def->label = L("For internal use only");
-    def->tooltip = L("This flag sets this extruder up as a unstored virtual extruder for use with mixing extruders.");
-    def->set_default_value(new ConfigOptionInts {-1});
-
-    def = this->add("mixing_extruder", coBools);
-    def->label = L("Enable color mixing extruder");
-    def->tooltip = L("This flag sets this extruder up as a mixing extruder. Please try to calibrate to the precise colors.");
-    def->set_default_value(new ConfigOptionBools {false});
-
-    def = this->add("nonmixing_extruder", coBools);
-    def->label = L("Enable non-mixing extruder");
-    def->tooltip = L("This flag sets this extruder up as a mixing extruder. Please try to calibrate to the precise colors.");
-    def->set_default_value(new ConfigOptionBools {false});
-    
     def = this->add("extruder_offset", coPoints);
     def->label = L("Extruder offset");
     def->tooltip = L("If your firmware doesn't handle the extruder displacement you need the G-code "
@@ -1183,30 +1102,6 @@ void PrintConfigDef::init_fff_params()
     def->min = 0;
     def->mode = comExpert;
     def->set_default_value(new ConfigOptionFloats { 0. });
-
-    def = this->add("filament_multitool_ramming", coBools);
-    def->label = L("Enable ramming for multitool setups");
-    def->tooltip = L("Perform ramming when using multitool printer (i.e. when the 'Single Extruder Multimaterial' in Printer Settings is unchecked). "
-                     "When checked, a small amount of filament is rapidly extruded on the wipe tower just before the toolchange. "
-                     "This option is only used when the wipe tower is enabled.");
-    def->mode = comExpert;
-    def->set_default_value(new ConfigOptionBools { false });
-
-    def = this->add("filament_multitool_ramming_volume", coFloats);
-    def->label = L("Multitool ramming volume");
-    def->tooltip = L("The volume to be rammed before the toolchange.");
-    def->sidetext = L("mm³");
-    def->min = 0;
-    def->mode = comExpert;
-    def->set_default_value(new ConfigOptionFloats { 10. });
-
-    def = this->add("filament_multitool_ramming_flow", coFloats);
-    def->label = L("Multitool ramming flow");
-    def->tooltip = L("Flow used for ramming the filament before the toolchange.");
-    def->sidetext = L("mm³/s");
-    def->min = 0;
-    def->mode = comExpert;
-    def->set_default_value(new ConfigOptionFloats { 10. });
 
     def = this->add("filament_diameter", coFloats);
     def->label = L("Diameter");
@@ -1744,21 +1639,9 @@ void PrintConfigDef::init_fff_params()
     def->mode = comExpert;
     def->set_default_value(new ConfigOptionBool(false));
 
-
     def = this->add("mmu_segmented_region_max_width", coFloat);
     def->label = L("Maximum width of a segmented region");
     def->tooltip = L("Maximum width of a segmented region. Zero disables this feature.");
-    def->sidetext = L("mm (zero to disable)");
-    def->min = 0;
-    def->category = L("Advanced");
-    def->mode = comExpert;
-    def->set_default_value(new ConfigOptionFloat(0.));
-
-    def = this->add("mmu_segmented_region_interlocking_depth", coFloat);
-    def->label = L("Interlocking depth of a segmented region");
-    def->tooltip = L("Interlocking depth of a segmented region. It will be ignored if "
-                       "\"mmu_segmented_region_max_width\" is zero or if \"mmu_segmented_region_interlocking_depth\""
-                       "is bigger then \"mmu_segmented_region_max_width\". Zero disables this feature.");
     def->sidetext = L("mm (zero to disable)");
     def->min = 0;
     def->category = L("Advanced");
@@ -3538,8 +3421,8 @@ void PrintConfigDef::init_extruder_option_keys()
         "nozzle_diameter", "min_layer_height", "max_layer_height", "extruder_offset",
         "retract_length", "retract_lift", "retract_lift_above", "retract_lift_below", "retract_speed", "deretract_speed",
         "retract_before_wipe", "retract_restart_extra", "retract_before_travel", "wipe",
-        "retract_layer_change", "retract_length_toolchange", "retract_restart_extra_toolchange", "extruder_colour","multi_extruder_colors","multi_extruder_color1","multi_extruder_color2","multi_extruder_color3","multi_extruder_color4","virtual_extruder","mixing_extruder",
-        "default_filament_profile", "stored_mixing_colors","nonmixing_extruder"
+        "retract_layer_change", "retract_length_toolchange", "retract_restart_extra_toolchange", "extruder_colour",
+        "default_filament_profile"
     };
 
     m_extruder_retract_keys = {
@@ -4320,7 +4203,7 @@ void PrintConfigDef::init_sla_params()
 
 // Ignore the following obsolete configuration keys:
 static std::set<std::string> PrintConfigDef_ignore = {
-    "clip_multipart_objects","single_extruder_multi_material",
+    "clip_multipart_objects",
     "duplicate_x", "duplicate_y", "gcode_arcs", "multiply_x", "multiply_y",
     "support_material_tool", "acceleration", "adjust_overhang_flow",
     "standby_temperature", "scale", "rotate", "duplicate", "duplicate_grid",
@@ -4552,11 +4435,11 @@ void  handle_legacy_sla(DynamicPrintConfig &config)
     }
 }
 
-void DynamicPrintConfig::set_num_extruders(unsigned int num_extruders, bool virtualExtruders)
+void DynamicPrintConfig::set_num_extruders(unsigned int num_extruders)
 {
     const auto &defaults = FullPrintConfig::defaults();
     for (const std::string &key : print_config_def.extruder_option_keys()) {
-        if (key == "default_filament_profile" || (virtualExtruders && key == "nozzle_diameter"))
+        if (key == "default_filament_profile")
             // Don't resize this field, as it is presented to the user at the "Dependencies" page of the Printer profile and we don't want to present
             // empty fields there, if not defined by the system profile.
             continue;
@@ -4565,142 +4448,6 @@ void DynamicPrintConfig::set_num_extruders(unsigned int num_extruders, bool virt
         assert(opt->is_vector());
         if (opt != nullptr && opt->is_vector())
             static_cast<ConfigOptionVectorBase*>(opt)->resize(num_extruders, defaults.option(key));
-    }
-}
-
-void DynamicPrintConfig::add_virtual_extruders(std::vector<std::string> colors, int extruder_id, int num_extruders)
-{
-    const auto &defaults = FullPrintConfig::defaults();
-    set_num_extruders(num_extruders+colors.size());
-    // resize the amount of extruders and set the colour to the right colour
-    for (const std::string &key : print_config_def.extruder_option_keys()){
-        if (key == "default_filament_profile")// || virtualExtruders && key == "nozzle_diameter")
-            // Don't resize this field, as it is presented to the user at the "Dependencies" page of the Printer profile and we don't want to present
-            // empty fields there, if not defined by the system profile.
-            continue;
-        auto *opt = this->option(key, false);
-        assert(opt != nullptr);
-        assert(opt->is_vector());
-        if (opt != nullptr && opt->is_vector()){
-            //static_cast<ConfigOptionVectorBase*>(opt)->resize(num_extruders + colors.size(), defaults.option(key));
-            int idx = num_extruders;
-            if (key == "extruder_colour")
-                for(std::string color: colors){
-                    static_cast<ConfigOptionVectorBase*>(opt)->set_at(new ConfigOptionString(color), idx, idx);
-                    idx++;
-                }
-            idx = num_extruders;
-            if (key == "virtual_extruder")
-                for(std::string color: colors){
-                    static_cast<ConfigOptionVectorBase*>(opt)->set_at(new ConfigOptionInt(extruder_id), idx, idx);
-                    idx++;
-                }
-            idx = num_extruders;
-            if (key == "mixing_extruder")
-                for(std::string color: colors){
-                    static_cast<ConfigOptionVectorBase*>(opt)->set_at(new ConfigOptionBool(false), idx, idx);
-                    idx++;
-                }
-            idx = num_extruders;
-            if (key == "nozzle_diameter")
-                for(std::string color: colors){
-                    static_cast<ConfigOptionVectorBase*>(opt)->set_at(new ConfigOptionFloat(0.4), idx, idx);
-                    idx++;
-                }
-        }
-    } 
-}
-
-bool DynamicPrintConfig::store_mixing_color(std::string color, int extruder_id, int to_delete)
-{
-    std::vector<std::string> mixing_colors;
-    for (const std::string &key : print_config_def.extruder_option_keys())
-        if (key == "stored_mixing_colors"){
-            auto *opt = this->option(key, false);
-            assert(opt != nullptr);
-            assert(opt->is_vector());
-            mixing_colors = (static_cast<ConfigOptionStrings*>(opt))->values;
-            if(std::string(mixing_colors.at(extruder_id)) == "" || !joined_has_val(std::string(mixing_colors.at(extruder_id)),"/",color)){
-                std::string result;
-                if(to_delete >-1){
-                    std::vector<std::string> vals = split(std::string(mixing_colors.at(extruder_id)),"/");
-                    for(int i = 0; i < to_delete; i++){
-                        result += "/"+vals[i];
-                    }
-                    for(int i = to_delete + 1; i < vals.size(); i++){
-                        result += "/"+vals[i];
-                    }
-                }else result = "/"+std::string(mixing_colors.at(extruder_id));
-                if(color == "") result.erase(0, 1);
-                static_cast<ConfigOptionVectorBase*>(opt)->set_at(new ConfigOptionString(color+result), extruder_id, extruder_id); 
-                return true;
-            }
-        }
-    return false;
-}
-
-int DynamicPrintConfig::id_like_this_virtual_extruder(std::string& color, int extruder_id, int num_extruders, bool noNew)
-{
-    //const auto &defaults = FullPrintConfig::defaults();
-    std::vector<int> virt_extruders;
-    // try to find an exisitng extruder
-    for (const std::string &key : print_config_def.extruder_option_keys())
-        if (key == "virtual_extruder"){
-            auto *opt = this->option(key, false);
-            assert(opt != nullptr);
-            assert(opt->is_vector());
-            virt_extruders = (static_cast<ConfigOptionInts*>(opt))->values;
-        }
-    for (const std::string &key : print_config_def.extruder_option_keys())
-        if (key == "extruder_colour"){
-            auto *opt = this->option(key, false);
-            assert(opt != nullptr);
-            assert(opt->is_vector());
-            int i = 0;
-            for(std::string ext_color: (static_cast<ConfigOptionStrings*>(opt))->values){
-                if(ext_color == color && virt_extruders.at(i) == extruder_id) return i;
-                i++;
-            }            
-        }
-    // else create newly
-    if(!noNew){
-        std::vector<std::string> colors;
-        colors.push_back(color);
-        this->add_virtual_extruders(colors, extruder_id, num_extruders);
-        return num_extruders;
-    } else return -1;
-}
-
-void DynamicPrintConfig::remove_all_virtual_extruders()
-{
-    const auto &defaults = FullPrintConfig::defaults();
-    // resize the amount of extruders and set the colour to the right colour
-    for (const std::string &key : print_config_def.extruder_option_keys()) {
-        if (key == "default_filament_profile")// || virtualExtruders && key == "nozzle_diameter")
-            // Don't resize this field, as it is presented to the user at the "Dependencies" page of the Printer profile and we don't want to present
-            // empty fields there, if not defined by the system profile.
-            continue;
-        auto *opt = this->option(key, false);
-        assert(opt != nullptr);
-        assert(opt->is_vector());
-        if (opt != nullptr && opt->is_vector()){
-            static_cast<ConfigOptionVectorBase*>(opt)->resize(16, defaults.option(key));
-        }
-    } 
-}
-
-void DynamicPrintConfig::set_extruder_color(std::string color, unsigned int idx)
-{
-    const auto &defaults = FullPrintConfig::defaults();
-    int i = 0;
-    for (const std::string &key : print_config_def.extruder_option_keys()) {
-        if (key == "extruder_colour" && i++ == idx){
-            auto *opt = this->option(key, false);
-            assert(opt != nullptr);
-            assert(opt->is_vector());
-            if (opt != nullptr && opt->is_vector())
-                static_cast<ConfigOptionVectorBase*>(opt)->set_at(new ConfigOptionString(color), idx, idx);//resize(num_extruders, 
-        }
     }
 }
 
@@ -5237,7 +4984,6 @@ void get_bed_shape(const DynamicPrintConfig &cfg, arrangement::ArrangeBed &out)
         out = arrangement::to_arrange_bed(get_bed_shape(cfg));
     }
 }
-
 
 Points get_bed_shape(const PrintConfig &cfg)
 {

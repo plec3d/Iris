@@ -12,6 +12,7 @@
 //    PrintConfig
 //        GCodeConfig
 //
+
 #ifndef slic3r_PrintConfig_hpp_
 #define slic3r_PrintConfig_hpp_
 
@@ -166,8 +167,6 @@ CONFIG_OPTION_ENUM_DECLARE_STATIC_MAPS(PerimeterGeneratorType)
 
 #undef CONFIG_OPTION_ENUM_DECLARE_STATIC_MAPS
 
-class DynamicPrintConfig;
-
 // Defines each and every confiuration option of Slic3r, including the properties of the GUI dialogs.
 // Does not store the actual values, but defines default values.
 class PrintConfigDef : public ConfigDef
@@ -176,7 +175,6 @@ public:
     PrintConfigDef();
 
     static void handle_legacy(t_config_option_key &opt_key, std::string &value);
-    static void handle_legacy_composite(DynamicPrintConfig &config);
 
     // Array options growing with the number of extruders
     const std::vector<std::string>& extruder_option_keys() const { return m_extruder_option_keys; }
@@ -250,12 +248,7 @@ public:
 
     void                normalize_fdm();
 
-    void                set_num_extruders(unsigned int num_extruders, bool virtualExtruders = false);
-    void                set_extruder_color(std::string color, unsigned int idx);
-    void                add_virtual_extruders(std::vector<std::string> colors, int extruder_id, int num_extruders);
-    int                 id_like_this_virtual_extruder(std::string& color, int extruder_id, int num_extruders, bool noNew = false);
-    bool                store_mixing_color(std::string color, int extruder_id, int to_delete = -1);
-    void                remove_all_virtual_extruders();
+    void                set_num_extruders(unsigned int num_extruders);
 
     // Validate the PrintConfig. Returns an empty string on success, otherwise an error message is returned.
     std::string         validate();
@@ -266,12 +259,6 @@ public:
     // handle_legacy() is called internally by set_deserialize().
     void                handle_legacy(t_config_option_key &opt_key, std::string &value) const override
         { PrintConfigDef::handle_legacy(opt_key, value); }
-
-    // Called after a config is loaded as a whole.
-    // Perform composite conversions, for example merging multiple keys into one key.
-    // For conversion of single options, the handle_legacy() method above is called.
-    void                handle_legacy_composite()
-        { PrintConfigDef::handle_legacy_composite(*this); }
 };
 
 void handle_legacy_sla(DynamicPrintConfig &config);
@@ -513,7 +500,6 @@ PRINT_CONFIG_CLASS_DEFINE(
     ((ConfigOptionBool,                interface_shells))
     ((ConfigOptionFloat,               layer_height))
     ((ConfigOptionFloat,               mmu_segmented_region_max_width))
-    ((ConfigOptionFloat,               mmu_segmented_region_interlocking_depth))
     ((ConfigOptionFloat,               raft_contact_distance))
     ((ConfigOptionFloat,               raft_expansion))
     ((ConfigOptionPercent,             raft_first_layer_density))
@@ -707,9 +693,6 @@ PRINT_CONFIG_CLASS_DEFINE(
     ((ConfigOptionFloats,              filament_minimal_purge_on_wipe_tower))
     ((ConfigOptionFloats,              filament_cooling_final_speed))
     ((ConfigOptionStrings,             filament_ramming_parameters))
-    ((ConfigOptionBools,               filament_multitool_ramming))
-    ((ConfigOptionFloats,              filament_multitool_ramming_volume))
-    ((ConfigOptionFloats,              filament_multitool_ramming_flow))
     ((ConfigOptionBool,                gcode_comments))
     ((ConfigOptionEnum<GCodeFlavor>,   gcode_flavor))
     ((ConfigOptionBool,                gcode_label_objects))
@@ -790,15 +773,7 @@ PRINT_CONFIG_CLASS_DERIVED_DEFINE(
     ((ConfigOptionFloat,              external_perimeter_acceleration))
     ((ConfigOptionFloat,              extruder_clearance_height))
     ((ConfigOptionFloat,              extruder_clearance_radius))
-    ((ConfigOptionInts,               virtual_extruder))
-    ((ConfigOptionBools,              mixing_extruder))
-    ((ConfigOptionBools,              nonmixing_extruder))
     ((ConfigOptionStrings,            extruder_colour))
-    ((ConfigOptionInts,               multi_extruder_colors))
-    ((ConfigOptionStrings,            multi_extruder_color1))
-    ((ConfigOptionStrings,            multi_extruder_color2))
-    ((ConfigOptionStrings,            multi_extruder_color3))
-    ((ConfigOptionStrings,            multi_extruder_color4))
     ((ConfigOptionPoints,             extruder_offset))
     ((ConfigOptionBools,              fan_always_on))
     ((ConfigOptionInts,               fan_below_layer_time))
