@@ -153,6 +153,7 @@ public:
 #endif // ENABLE_PROJECT_DIRTY_STATE_DEBUG_WINDOW
 
     bool is_project_temp() const;
+    //std::vector<std::string> model_colors = {"#FF0000","#00FF00","#0000FF"};
 
     Sidebar& sidebar();
     const Model& model() const;
@@ -320,7 +321,14 @@ public:
     void on_activate();
     std::vector<std::string> get_extruder_colors_from_plater_config(const GCodeProcessorResult* const result = nullptr) const;
     std::vector<std::string> get_colors_for_color_print(const GCodeProcessorResult* const result = nullptr) const;
-
+    void set_extruder_color(std::string color, int idx);
+    void set_extruder_count(int idx, bool virtualExtruders = false);
+    void add_virtual_extruders(std::vector<std::string> colors, int idx, int num_extruders);
+    int id_like_this_virtual_extruder(std::string& color, int extruder_id, int num_extruders, bool noNew = false);
+    bool store_mixing_color(std::string& color, int extruder_id, int to_delete = -1);
+    void remove_all_virtual_extruders();
+    void remove_extruders_after(int idx);
+    
     void update_menus();
     void show_action_buttons(const bool is_ready_to_slice) const;
     void show_action_buttons() const;

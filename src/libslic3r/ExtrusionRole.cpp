@@ -19,7 +19,9 @@ GCodeExtrusionRole extrusion_role_to_gcode_extrusion_role(ExtrusionRole role)
     }
     if (role == ExtrusionRole::InternalInfill)      return GCodeExtrusionRole::InternalInfill;
     if (role == ExtrusionRole::SolidInfill)         return GCodeExtrusionRole::SolidInfill;
+    if (role == ExtrusionRole::SolidInfillNonplanar) return GCodeExtrusionRole::SolidInfillNonplanar;
     if (role == ExtrusionRole::TopSolidInfill)      return GCodeExtrusionRole::TopSolidInfill;
+    if (role == ExtrusionRole::TopSolidInfillNonplanar) return GCodeExtrusionRole::TopSolidInfillNonplanar;
     if (role == ExtrusionRole::Ironing)             return GCodeExtrusionRole::Ironing;
     if (role == ExtrusionRole::BridgeInfill)        return GCodeExtrusionRole::BridgeInfill;
     if (role == ExtrusionRole::GapFill)             return GCodeExtrusionRole::GapFill;
@@ -40,7 +42,9 @@ std::string gcode_extrusion_role_to_string(GCodeExtrusionRole role)
         case GCodeExtrusionRole::OverhangPerimeter            : return L("Overhang perimeter");
         case GCodeExtrusionRole::InternalInfill               : return L("Internal infill");
         case GCodeExtrusionRole::SolidInfill                  : return L("Solid infill");
+        case GCodeExtrusionRole::SolidInfillNonplanar         : return L("Nonplanar solid infill");
         case GCodeExtrusionRole::TopSolidInfill               : return L("Top solid infill");
+        case GCodeExtrusionRole::TopSolidInfillNonplanar      : return L("Nonplanar top solid infill");
         case GCodeExtrusionRole::Ironing                      : return L("Ironing");
         case GCodeExtrusionRole::BridgeInfill                 : return L("Bridge infill");
         case GCodeExtrusionRole::GapFill                      : return L("Gap fill");
@@ -66,8 +70,12 @@ GCodeExtrusionRole string_to_gcode_extrusion_role(const std::string_view role)
         return GCodeExtrusionRole::InternalInfill;
     else if (role == L("Solid infill"))
         return GCodeExtrusionRole::SolidInfill;
+    else if (role == L("Nonplanar solid infill"))
+        return GCodeExtrusionRole::SolidInfill;
     else if (role == L("Top solid infill"))
         return GCodeExtrusionRole::TopSolidInfill;
+    else if (role == L("Nonplanar top solid infill"))
+        return GCodeExtrusionRole::TopSolidInfillNonplanar;
     else if (role == L("Ironing"))
         return GCodeExtrusionRole::Ironing;
     else if (role == L("Bridge infill"))

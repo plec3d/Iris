@@ -569,7 +569,9 @@ const std::array<ColorRGBA, static_cast<size_t>(GCodeExtrusionRole::Count)> GCod
     { 0.12f, 0.12f, 1.00f, 1.0f },   // GCodeExtrusionRole::OverhangPerimeter
     { 0.69f, 0.19f, 0.16f, 1.0f },   // GCodeExtrusionRole::InternalInfill
     { 0.59f, 0.33f, 0.80f, 1.0f },   // GCodeExtrusionRole::SolidInfill
+    { 0.75f, 0.12f, 0.45f, 1.0f },   // GCodeExtrusionRole::SolidInfillNonplanar
     { 0.94f, 0.25f, 0.25f, 1.0f },   // GCodeExtrusionRole::TopSolidInfill
+    { 0.32f, 0.12f, 0.45f, 1.0f },   // GCodeExtrusionRole::TopSolidInfillNonplanar
     { 1.00f, 0.55f, 0.41f, 1.0f },   // GCodeExtrusionRole::Ironing
     { 0.30f, 0.50f, 0.73f, 1.0f },   // GCodeExtrusionRole::BridgeInfill
     { 1.00f, 1.00f, 1.00f, 1.0f },   // GCodeExtrusionRole::GapFill

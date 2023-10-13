@@ -33,6 +33,7 @@
 #include "TriangleSelectorWrapper.hpp"
 #include "format.hpp"
 #include "libslic3r.h"
+#include "SVG.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -53,6 +54,7 @@
 #include <utility>
 
 #include <boost/log/trivial.hpp>
+#include <boost/bind.hpp>
 
 #include <tbb/parallel_for.h>
 #include <vector>
@@ -178,6 +180,8 @@ void PrintObject::make_perimeters()
         }
         m_typed_slices = false;
     }
+
+    this->detect_nonplanar_surfaces();
     
     // compare each layer to the one below, and mark those slices needing
     // one additional inner perimeter, like the top of domed objects-
@@ -275,16 +279,17 @@ void PrintObject::prepare_infill()
 
     m_print->set_status(30, _u8L("Preparing infill"));
 
-    if (m_typed_slices) {
-        // To improve robustness of detect_surfaces_type() when reslicing (working with typed slices), see GH issue #7442.
-        // The preceding step (perimeter generator) only modifies extra_perimeters and the extra perimeters are only used by discover_vertical_shells()
-        // with more than a single region. If this step does not use Surface::extra_perimeters or Surface::extra_perimeters is always zero, it is safe
-        // to reset to the untyped slices before re-runnning detect_surfaces_type().
-        for (Layer* layer : m_layers) {
-            layer->restore_untyped_slices_no_extra_perimeters();
-            m_print->throw_if_canceled();
-        }
-    }
+    // if (m_typed_slices) {
+    //     // To improve robustness of detect_surfaces_type() when reslicing (working with typed slices), see GH issue #7442.
+    //     // The preceding step (perimeter generator) only modifies extra_perimeters and the extra perimeters are only used by discover_vertical_shells()
+    //     // with more than a single region. If this step does not use Surface::extra_perimeters or Surface::extra_perimeters is always zero, it is safe
+    //     // to reset to the untyped slices before re-runnning detect_surfaces_type().
+    //     for (Layer* layer : m_layers) {
+    //         layer->restore_untyped_slices_no_extra_perimeters();
+    //         m_print->throw_if_canceled();
+    //     }
+    //     this->detect_nonplanar_surfaces();
+    // }
 
     // This will assign a type (top/bottom/internal) to $layerm->slices.
     // Then the classifcation of $layerm->slices is transfered onto 
@@ -434,6 +439,9 @@ void PrintObject::infill()
                 }
             }
         );
+
+        this->project_nonplanar_surfaces();
+
         m_print->throw_if_canceled();
         BOOST_LOG_TRIVIAL(debug) << "Filling layers in parallel - end";
         /*  we could free memory now, but this would make this step not idempotent
@@ -793,6 +801,13 @@ bool PrintObject::invalidate_state_by_config_options(
 	            steps.emplace_back(posSupportMaterial);
 	        }
         } else if (
+               opt_key == "use_nonplanar_layers"
+            || opt_key == "nonplanar_layers_angle"
+            || opt_key == "nonplanar_layers_height") {
+            // steps.emplace_back(posPerimeters);
+            // steps.emplace_back(posInfill);
+            steps.emplace_back(posSlice);
+        } else if (
             opt_key == "perimeter_generator"
             || opt_key == "wall_transition_length"
             || opt_key == "wall_transition_filter_deviation"
@@ -899,6 +914,8 @@ void PrintObject::cleanup()
 // stBottomBridge - Part of a region, which is not fully supported, but it hangs in the air, or it hangs losely on a support or a raft.
 // stBottom       - Part of a region, which is not supported by the same region, but it is supported either by another region, or by a soluble interface layer.
 // stInternal     - Part of a region, which is supported by the same region type.
+// stTopNonplanar - 
+// stInternalSolidNonplanar - 
 // If a part of a region is of stBottom and stTop, the stBottom wins.
 void PrintObject::detect_surfaces_type()
 {
@@ -952,6 +969,22 @@ void PrintObject::detect_surfaces_type()
                     // collapse very narrow parts (using the safety offset in the diff is not enough)
                     float        offset = layerm->flow(frExternalPerimeter).scaled_width() / 10.f;
 
+                    //Find mark nonplanar surfaces
+                    Surfaces nonplanar_surfaces;
+                    for(auto& surface : layerm->nonplanar_surfaces()) {
+                        surfaces_append(
+                            nonplanar_surfaces,
+                            intersection_ex(surface.horizontal_projection(), union_ex(layerm->slices().surfaces)),
+                            (surface.stats.max.z <= layer->slice_z + layer->height ? stTopNonplanar : stInternalSolidNonplanar)
+                        );
+                        BOOST_LOG_TRIVIAL(trace) << "Detecting solid surfaces - layer " << (idx_layer+1) << "/" << m_layers.size() << " is " << 
+                            (surface.stats.max.z <= layer->slice_z + layer->height ? "top nonplanar" : "internal nonplanar") <<
+                            ", surface max z=" << surface.stats.max.z << ", slice_z=" << layer->slice_z << ", layer height=" << layer->height;
+                    }
+
+                    //remove non planar surfaces form all surfaces to get planar surfaces
+                    ExPolygons planar_surfaces = diff_ex(layerm->slices().surfaces, nonplanar_surfaces, ApplySafetyOffset::Yes);
+
                     // find top surfaces (difference between current surfaces
                     // of current layer and upper one)
                     Surfaces top;
@@ -959,13 +992,11 @@ void PrintObject::detect_surfaces_type()
                         ExPolygons upper_slices = interface_shells ? 
                             diff_ex(layerm->slices().surfaces, upper_layer->m_regions[region_id]->slices().surfaces, ApplySafetyOffset::Yes) :
                             diff_ex(layerm->slices().surfaces, upper_layer->lslices, ApplySafetyOffset::Yes);
-                        surfaces_append(top, opening_ex(upper_slices, offset), stTop);
+                        surfaces_append(top, diff_ex(opening_ex(upper_slices, offset), nonplanar_surfaces, ApplySafetyOffset::Yes), stTop);
                     } else {
                         // if no upper layer, all surfaces of this one are solid
                         // we clone surfaces because we're going to clear the slices collection
-                        top = layerm->slices().surfaces;
-                        for (Surface &surface : top)
-                            surface.surface_type = stTop;
+                        surfaces_append(top, union_ex(planar_surfaces), stTop);
                     }
                     
                     // Find bottom surfaces (difference between current surfaces of current layer and lower one).
@@ -984,7 +1015,11 @@ void PrintObject::detect_surfaces_type()
                         surfaces_append(
                             bottom,
                             opening_ex(
-                                diff_ex(layerm->slices().surfaces, lower_layer->lslices, ApplySafetyOffset::Yes),
+                                diff_ex(
+                                    diff_ex(layerm->slices().surfaces, lower_layer->lslices, ApplySafetyOffset::Yes),
+                                    nonplanar_surfaces,
+                                    ApplySafetyOffset::Yes
+                                ),
                                 offset),
                             surface_type_bottom_other);
                         // if user requested internal shells, we need to identify surfaces
@@ -996,8 +1031,11 @@ void PrintObject::detect_surfaces_type()
                                 bottom,
                                 opening_ex(
                                     diff_ex(
-                                        intersection(layerm->slices().surfaces, lower_layer->lslices), // supported
-                                        lower_layer->m_regions[region_id]->slices().surfaces,
+                                        diff_ex(
+                                            intersection(layerm->slices().surfaces, lower_layer->lslices), // supported
+                                            lower_layer->m_regions[region_id]->slices().surfaces,
+                                            ApplySafetyOffset::Yes),
+                                        nonplanar_surfaces,
                                         ApplySafetyOffset::Yes),
                                     offset),
                                 stBottom);
@@ -1029,6 +1067,7 @@ void PrintObject::detect_surfaces_type()
                         std::vector<std::pair<Slic3r::ExPolygons, SVG::ExPolygonAttributes>> expolygons_with_attributes;
                         expolygons_with_attributes.emplace_back(std::make_pair(union_ex(top),                             SVG::ExPolygonAttributes("green")));
                         expolygons_with_attributes.emplace_back(std::make_pair(union_ex(bottom),                          SVG::ExPolygonAttributes("brown")));
+                        expolygons_with_attributes.emplace_back(std::make_pair(union_ex(nonplanar_surfaces),              SVG::ExPolygonAttributes("red")));
                         expolygons_with_attributes.emplace_back(std::make_pair(to_expolygons(layerm->slices().surfaces),  SVG::ExPolygonAttributes("black")));
                         SVG::export_expolygons(debug_out_path("1_detect_surfaces_type_%d_region%d-layer_%f.svg", iRun ++, region_id, layer->print_z).c_str(), expolygons_with_attributes);
                     }
@@ -1045,13 +1084,15 @@ void PrintObject::detect_surfaces_type()
 
                     // find internal surfaces (difference between top/bottom surfaces and others)
                     {
-                        Polygons topbottom = to_polygons(top);
-                        polygons_append(topbottom, to_polygons(bottom));
-                        surfaces_append(surfaces_out, diff_ex(surfaces_prev, topbottom), stInternal);
+                        Polygons solid_surfaces = to_polygons(top);
+                        polygons_append(solid_surfaces, to_polygons(bottom));
+                        polygons_append(solid_surfaces, to_polygons(nonplanar_surfaces));
+                        surfaces_append(surfaces_out, diff_ex(surfaces_prev, solid_surfaces), stInternal);
                     }
 
                     surfaces_append(surfaces_out, std::move(top));
                     surfaces_append(surfaces_out, std::move(bottom));
+                    surfaces_append(surfaces_out, std::move(nonplanar_surfaces));
                     
         //            Slic3r::debugf "  layer %d has %d bottom, %d top and %d internal surfaces\n",
         //                $layerm->layer->id, scalar(@bottom), scalar(@top), scalar(@internal) if $Slic3r::debug;
@@ -1099,6 +1140,265 @@ void PrintObject::detect_surfaces_type()
 
     // Mark the object to have the region slices classified (typed, which also means they are split based on whether they are supported, bridging, top layers etc.)
     m_typed_slices = true;
+}
+
+bool
+PrintObject::check_nonplanar_collisions(NonplanarSurface &surface)
+{
+    Polygons nonplanar_polygon = to_polygons(surface.horizontal_projection());
+	for (size_t region_id = 0; region_id < this->num_printing_regions(); ++ region_id) {
+        Polygons collider;
+        //check each layer
+        for (size_t idx_layer = 0; idx_layer < m_layers.size(); ++ idx_layer) {
+            m_print->throw_if_canceled();
+            Layer       *layer  = m_layers[idx_layer];
+            LayerRegion *layerm = layer->m_regions[region_id];
+
+            // skip if below minimum nonplanar surface
+            if (surface.stats.min.z > layer->slice_z + layer->height) continue;
+            // break if above nonplanar surface
+            if (surface.stats.max.z < layer->slice_z) break;
+
+            BOOST_LOG_TRIVIAL(trace) << "Check nonplanar collisions for region " << region_id << " and layer " << layer->print_z;
+
+            // float angle_rad = m_config.nonplanar_layers_angle.value * 3.14159265/180.0;
+            // float angle_offset = scale_(layer->height*std::sin(1.57079633-angle_rad)/std::sin(angle_rad));
+
+            //check if current surface collides with previous collider
+            ExPolygons collisions = union_ex(intersection(layerm->slices().surfaces, diff(collider, nonplanar_polygon)));
+
+#ifdef SLIC3R_DEBUG_SLICE_PROCESSING
+                {
+                    static int iRun = 0;
+                    SVG svg(debug_out_path("Layer-%u-collider-%u_collisions_layer%.2f.svg", layer->id(), iRun++, layer->print_z), get_extents(layerm->slices().surfaces));
+                    svg.draw(layerm->slices().surfaces, "blue");
+                    svg.draw(collisions, "red", 0.7f);
+                    svg.arrows = false;
+                    svg.Close();
+                }
+#endif
+
+            if (!collisions.empty()) {
+                double area = 0;
+                for (auto& c : collisions){
+                    area += c.area();
+                }
+
+                //collsion found abort when area > 1.0 mm²
+                if (1.0 < unscale<double>(unscale<double>(area))) {
+                    BOOST_LOG_TRIVIAL(trace) << "Surface removed: collision on layer " << layer->print_z << "mm (" << unscale<double>(unscale<double>(area)) << " mm²)";
+
+                //debug
+#ifdef SLIC3R_DEBUG_SLICE_PROCESSING
+                {
+                    static int iRun = 0;
+                    SVG svg(debug_out_path("Layer-%u-collider-%u_removed_layer%.2f.svg", layer->id(), iRun++, layer->print_z), get_extents(layerm->slices().surfaces));
+                    svg.draw(layerm->slices().surfaces, "blue");
+                    svg.draw(union_ex(diff(collider,nonplanar_polygon)), "red", 0.7f);
+                    svg.draw_outline(collider);
+                    svg.arrows = false;
+                    svg.Close();
+                }
+#endif
+
+                    return true;
+                }
+            }
+
+            if (layer->upper_layer != NULL) {
+                Layer* upper_layer = layer->upper_layer;
+                LayerRegion *upper_layerm = upper_layer->m_regions[region_id];
+                // merge surface to the collider
+                collider = union_(
+                                intersection(
+                                    diff_ex(layerm->slices().surfaces, upper_layerm->slices().surfaces, ApplySafetyOffset::No),
+                                    nonplanar_polygon,
+                                    ApplySafetyOffset::No), 
+                                collider);
+
+#ifdef SLIC3R_DEBUG_SLICE_PROCESSING
+                {
+                    static int iRun = 0;
+                    SVG svg(debug_out_path("Layer-%u-collider-%u_layer%.2f.svg", layer->id(), iRun++, layer->print_z), get_extents(layerm->slices().surfaces));
+                    svg.draw_outline(collider, "black", scale_(0.1f));
+                    svg.Close();
+                }
+#endif
+            }
+        }
+    }
+
+    return false;
+}
+
+void
+PrintObject::detect_nonplanar_surfaces()
+{
+    //skip if not active
+    if(!m_config.use_nonplanar_layers.value) return;
+
+    bool moved_surfaces = false;
+
+    for (size_t region_id = 0; region_id < this->num_printing_regions(); ++ region_id) {
+        m_print->throw_if_canceled();
+        BOOST_LOG_TRIVIAL(trace) << "detect_nonplanar_surfaces for region " << region_id;
+        const PrintRegion &region = this->printing_region(region_id);
+
+        //repeat detection for every nonplanar_surface
+        for (auto& nonplanar_surface: this->nonplanar_surfaces()) {
+            float distance_to_top = 0.0f;            
+            for (int shell_thickness = 0; region.config().top_solid_layers > shell_thickness; ++shell_thickness){
+                //search home layer where the area is projected to
+                for (LayerPtrs::reverse_iterator home_layer_it = this->m_layers.rbegin(); home_layer_it != this->m_layers.rend(); ++home_layer_it){
+                    Layer* home_layer        = *home_layer_it;
+                    LayerRegion &home_layerm = *home_layer->m_regions[region_id];
+                    //continue if home layer is not maximum height of nonplanar_surface - the desired distance to the top of the surface for more than one top solid layer
+                    if (home_layer->slice_z > nonplanar_surface.stats.max.z - distance_to_top) continue;
+
+                    //process layers
+                    for (LayerPtrs::iterator layer_it = this->m_layers.begin(); layer_it != this->m_layers.end(); ++layer_it){
+                        Layer* layer        = *layer_it;
+                        LayerRegion &layerm = *layer->m_regions[region_id];
+
+                        //skip if below minimum nonplanar surface and below the last possible surface layer
+                        if (nonplanar_surface.stats.min.z-layer->height-distance_to_top > layer->slice_z) continue;
+                        //break if above home layer
+                        if (home_layer->slice_z < layer->slice_z) break;
+                        //skip if bottom layer because we dont want to project the bottom layers up
+                        if (layer->lower_layer == NULL) continue;
+
+                        BOOST_LOG_TRIVIAL(trace) << "detect_nonplanar_surfaces for region " << region_id << " and layer " << layer->print_z;
+
+                        Surfaces layerm_slices_surfaces = layerm.slices().surfaces;
+                        SurfaceCollection topNonplanar;
+                        if (layer->upper_layer != NULL) {
+                            //append layers where nothing is above
+                            Layer* upper_layer = layer->upper_layer;
+                            LayerRegion &upper_layerm = *upper_layer->m_regions[region_id];
+                            Surfaces upper_surfaces = upper_layerm.slices().surfaces;
+                            topNonplanar.append(
+                                intersection_ex(
+                                    nonplanar_surface.horizontal_projection(),
+                                    union_ex(
+                                        diff_ex(
+                                            layerm_slices_surfaces, 
+                                            upper_surfaces, 
+                                            ApplySafetyOffset::No)), 
+                                    ApplySafetyOffset::No),
+                                (shell_thickness == 0 ? stTopNonplanar : stInternalSolidNonplanar),
+                                distance_to_top
+                            );
+
+                            // append layers where nonplanar areas with a lower distance_to_top are above
+                            SurfaceCollection upper_nonplanar;
+                            for (auto& s : upper_surfaces){
+                                if (s.is_nonplanar() && s.distance_to_top < distance_to_top) {
+                                    upper_nonplanar.surfaces.push_back(s);
+                                }
+                            }
+                            if (upper_nonplanar.size() > 0)
+                                topNonplanar.append(
+                                    intersection_ex(
+                                        nonplanar_surface.horizontal_projection(),
+                                        to_expolygons(upper_nonplanar.surfaces),
+                                        ApplySafetyOffset::No),
+                                    (shell_thickness == 0 ? stTopNonplanar : stInternalSolidNonplanar),
+                                    distance_to_top
+                                );
+                        }
+                        else {
+                            topNonplanar.append(
+                                intersection_ex(
+                                    nonplanar_surface.horizontal_projection(),
+                                    union_ex(to_expolygons(layerm_slices_surfaces)),
+                                    ApplySafetyOffset::No),
+                                (shell_thickness == 0 ? stTopNonplanar : stInternalSolidNonplanar),
+                                distance_to_top
+                            );
+                        }
+
+                        if (topNonplanar.size() > 0) {
+                            // layerm.export_region_slices_to_svg_debug("home_layer_append-layerm");
+                            // home_layerm.export_region_slices_to_svg_debug("home_layer_append-home_layerm");
+
+                            BOOST_LOG_TRIVIAL(trace) << "Removing " << topNonplanar.size() << " nonplanar surfaces from layer " << layer->print_z;
+
+                            layerm.remove_nonplanar_slices(topNonplanar);
+
+                            BOOST_LOG_TRIVIAL(trace) << "Adding " << topNonplanar.size() << " nonplanar surfaces to layer " << home_layer->print_z;
+
+                            // move nonplanar surfaces to home layer
+                            home_layerm.append_top_nonplanar_slices(topNonplanar);
+
+                            //save nonplanar_surface to home_layers nonplanar_surface list
+                            home_layerm.append_nonplanar_surface(nonplanar_surface);
+
+                            moved_surfaces = true;
+                        }
+                    }
+
+                    //increase distance to the top layer
+                    distance_to_top += home_layer->height;
+                    break;
+                }
+            }
+        }
+    }
+
+    if(moved_surfaces) {
+        // After changing a layer's slices, we must rebuild its lslices into islands
+        this->make_slices();
+        this->lslices_were_updated();
+    }
+
+    // Debugging output.
+#ifdef SLIC3R_DEBUG_SLICE_PROCESSING
+    for (size_t region_id = 0; region_id < this->num_printing_regions(); ++ region_id) {
+        for (const Layer *layer : m_layers) {
+            LayerRegion *layerm = layer->m_regions[region_id];
+            layerm->export_region_slices_to_svg_debug("0_detect_nonplanar_surfaces");
+            layerm->export_region_fill_surfaces_to_svg_debug("0_detect_nonplanar_surfaces");
+        } // for each layer
+    } // for each region
+#endif /* SLIC3R_DEBUG_SLICE_PROCESSING */
+
+    //set typed_slices to true to force merge
+    m_typed_slices = true;
+}
+
+void
+PrintObject::project_nonplanar_surfaces()
+{
+    if(!m_config.use_nonplanar_layers.value) return;
+
+    //TODO check when steps should be invalidated
+    if (is_step_done(posNonplanarProjection)) return;
+    set_started(posNonplanarProjection);
+
+	for (size_t region_id = 0; region_id < this->num_printing_regions(); ++region_id) {
+        BOOST_LOG_TRIVIAL(debug) << "Processing nonplanar surfaces for region " << region_id << " in parallel - start";
+        tbb::parallel_for(
+            tbb::blocked_range<size_t>(0, m_layers.size()),
+            [this, region_id](const tbb::blocked_range<size_t>& range) {
+                PRINT_OBJECT_TIME_LIMIT_MILLIS(PRINT_OBJECT_TIME_LIMIT_DEFAULT);
+                for (size_t idx_layer = range.begin(); idx_layer < range.end(); ++ idx_layer) {
+                    m_print->throw_if_canceled();
+                    LayerRegion *layerm = m_layers[idx_layer]->m_regions[region_id];
+
+                    BOOST_LOG_TRIVIAL(trace) << "Processing nonplanar surfaces for region " << region_id << " and layer " << \
+                       idx_layer << " (z = " << layerm->layer()->print_z << ")";
+
+                    layerm->project_nonplanar_surfaces();
+#ifdef SLIC3R_DEBUG_SLICE_PROCESSING
+                    layerm->export_region_fill_surfaces_to_svg_debug("11_project_nonplanar_surfaces-final");
+#endif /* SLIC3R_DEBUG_SLICE_PROCESSING */
+                } // for each layer of a region
+            });
+    }
+
+    BOOST_LOG_TRIVIAL(debug) << "Processing nonplanar surfaces - end";
+
+    set_done(posNonplanarProjection);
 }
 
 void PrintObject::process_external_surfaces()
@@ -1223,6 +1523,7 @@ void PrintObject::discover_vertical_shells()
             [this, &cache_top_botom_regions](const tbb::blocked_range<size_t>& range) {
                 PRINT_OBJECT_TIME_LIMIT_MILLIS(PRINT_OBJECT_TIME_LIMIT_DEFAULT);
                 const std::initializer_list<SurfaceType> surfaces_bottom { stBottom, stBottomBridge };
+                const std::initializer_list<SurfaceType> surfaces_top { stTop, stTopNonplanar };
                 const size_t num_regions = this->num_printing_regions();
                 for (size_t idx_layer = range.begin(); idx_layer < range.end(); ++ idx_layer) {
                     m_print->throw_if_canceled();
@@ -1239,7 +1540,7 @@ void PrintObject::discover_vertical_shells()
                         LayerRegion &layerm               = *layer.m_regions[region_id];
                         float        top_bottom_expansion = float(layerm.flow(frSolidInfill).scaled_spacing()) * top_bottom_expansion_coeff;
                         // Top surfaces.
-                        append(cache.top_surfaces, offset(layerm.slices().filter_by_type(stTop), top_bottom_expansion));
+                        append(cache.top_surfaces, offset(layerm.slices().filter_by_types(surfaces_top), top_bottom_expansion));
 //                        append(cache.top_surfaces, offset(layerm.fill_surfaces().filter_by_type(stTop), top_bottom_expansion));
                         // Bottom surfaces.
                         append(cache.bottom_surfaces, offset(layerm.slices().filter_by_types(surfaces_bottom), top_bottom_expansion));
@@ -1297,6 +1598,7 @@ void PrintObject::discover_vertical_shells()
                 [this, region_id, &cache_top_botom_regions](const tbb::blocked_range<size_t>& range) {
                     PRINT_OBJECT_TIME_LIMIT_MILLIS(PRINT_OBJECT_TIME_LIMIT_DEFAULT);
                     const std::initializer_list<SurfaceType> surfaces_bottom { stBottom, stBottomBridge };
+                    const std::initializer_list<SurfaceType> surfaces_top { stTop, stTopNonplanar };
                     for (size_t idx_layer = range.begin(); idx_layer < range.end(); ++ idx_layer) {
                         m_print->throw_if_canceled();
                         Layer       &layer                = *m_layers[idx_layer];
@@ -1304,7 +1606,7 @@ void PrintObject::discover_vertical_shells()
                         float        top_bottom_expansion = float(layerm.flow(frSolidInfill).scaled_spacing()) * top_bottom_expansion_coeff;
                         // Top surfaces.
                         auto &cache = cache_top_botom_regions[idx_layer];
-                        cache.top_surfaces = offset(layerm.slices().filter_by_type(stTop), top_bottom_expansion);
+                        cache.top_surfaces = offset(layerm.slices().filter_by_types(surfaces_top), top_bottom_expansion);
 //                        append(cache.top_surfaces, offset(layerm.fill_surfaces().filter_by_type(stTop), top_bottom_expansion));
                         // Bottom surfaces.
                         cache.bottom_surfaces = offset(layerm.slices().filter_by_types(surfaces_bottom), top_bottom_expansion);
@@ -1485,7 +1787,7 @@ void PrintObject::discover_vertical_shells()
                         svg.draw(shell_ex, "blue", 0.5);
                         svg.draw_outline(shell_ex, "black", "blue", scale_(0.05));
                         svg.Close();
-                    } 
+                    }
                     {
                         Slic3r::SVG svg(debug_out_path("discover_vertical_shells-internalvoid-wshell-%d.svg", debug_idx), get_extents(shell));
                         svg.draw(layerm->fill_surfaces().filter_by_type(stInternalVoid), "yellow", 0.5);
@@ -1493,7 +1795,7 @@ void PrintObject::discover_vertical_shells()
                         svg.draw(shell_ex, "blue", 0.5);
                         svg.draw_outline(shell_ex, "black", "blue", scale_(0.05));
                         svg.Close();
-                    } 
+                    }
                     {
                         Slic3r::SVG svg(debug_out_path("discover_vertical_shells-internalsolid-wshell-%d.svg", debug_idx), get_extents(shell));
                         svg.draw(layerm->fill_surfaces().filter_by_type(stInternalSolid), "yellow", 0.5);
@@ -1501,18 +1803,32 @@ void PrintObject::discover_vertical_shells()
                         svg.draw(shell_ex, "blue", 0.5);
                         svg.draw_outline(shell_ex, "black", "blue", scale_(0.05));
                         svg.Close();
-                    } 
+                    }
+                    {
+                        Slic3r::SVG svg(debug_out_path("discover_vertical_shells-internalsolidnonplanar-wshell-%d.svg", debug_idx), get_extents(shell));
+                        svg.draw(layerm->fill_surfaces().filter_by_type(stInternalSolidNonplanar), "yellow", 0.5);
+                        svg.draw_outline(layerm->fill_surfaces().filter_by_type(stInternalSolidNonplanar), "black", "blue", scale_(0.05));
+                        svg.draw(shell_ex, "blue", 0.5);
+                        svg.draw_outline(shell_ex, "black", "blue", scale_(0.05));
+                        svg.Close();
+                    }
+                    {
+                        Slic3r::SVG svg(debug_out_path("discover_vertical_shells-holes-wshell-%d.svg", debug_idx), get_extents(shell));
+                        svg.draw_outline(to_expolygons(holes), "black", "blue", scale_(0.05));
+                        svg.Close();
+                    }
 #endif /* SLIC3R_DEBUG_SLICE_PROCESSING */
 
                     // Trim the shells region by the internal & internal void surfaces.
-                    const Polygons    polygonsInternal = to_polygons(layerm->fill_surfaces().filter_by_types({ stInternal, stInternalVoid, stInternalSolid }));
+                    const Polygons    polygonsInternal = to_polygons(layerm->fill_surfaces().filter_by_types({ stInternal, stInternalVoid, stInternalSolid, stInternalSolidNonplanar }));
+                    const Polygons    polygonsInternalNonplanar = to_polygons(layerm->fill_surfaces().filter_by_type(stInternalSolidNonplanar));
                     shell = intersection(shell, polygonsInternal, ApplySafetyOffset::Yes);
                     polygons_append(shell, diff(polygonsInternal, holes));
                     if (shell.empty())
                         continue;
 
                     // Append the internal solids, so they will be merged with the new ones.
-                    polygons_append(shell, to_polygons(layerm->fill_surfaces().filter_by_type(stInternalSolid)));
+                    polygons_append(shell, to_polygons(layerm->fill_surfaces().filter_by_types({ stInternalSolid, stInternalSolidNonplanar })));
 
                     // These regions will be filled by a rectilinear full infill. Currently this type of infill
                     // only fills regions, which fit at least a single line. To avoid gaps in the sparse infill,
@@ -1560,7 +1876,8 @@ void PrintObject::discover_vertical_shells()
                     if (regularized_shell.empty())
                         continue;
 
-                    ExPolygons new_internal_solid = intersection_ex(polygonsInternal, regularized_shell);
+                    ExPolygons new_internal_solid = intersection_ex(diff_ex(polygonsInternal, polygonsInternalNonplanar), regularized_shell);
+                    ExPolygons new_internal_solid_nonplanar = intersection_ex(polygonsInternalNonplanar, regularized_shell);
 #ifdef SLIC3R_DEBUG_SLICE_PROCESSING
                     {
                         Slic3r::SVG svg(debug_out_path("discover_vertical_shells-regularized-%d.svg", debug_idx), get_extents(shell_before));
@@ -1583,14 +1900,16 @@ void PrintObject::discover_vertical_shells()
                         SVG::export_expolygons(debug_out_path("discover_vertical_shells-new_internal-%d.svg", debug_idx), get_extents(shell), new_internal, "black", "blue", scale_(0.05));
         				SVG::export_expolygons(debug_out_path("discover_vertical_shells-new_internal_void-%d.svg", debug_idx), get_extents(shell), new_internal_void, "black", "blue", scale_(0.05));
         				SVG::export_expolygons(debug_out_path("discover_vertical_shells-new_internal_solid-%d.svg", debug_idx), get_extents(shell), new_internal_solid, "black", "blue", scale_(0.05));
+        				SVG::export_expolygons(debug_out_path("discover_vertical_shells-new_internal_solid_nonplanar-%d.svg", debug_idx), get_extents(shell), new_internal_solid_nonplanar, "black", "blue", scale_(0.05));
                     }
 #endif /* SLIC3R_DEBUG_SLICE_PROCESSING */
 
                     // Assign resulting internal surfaces to layer.
-                    layerm->m_fill_surfaces.keep_types({ stTop, stBottom, stBottomBridge });
+                    layerm->m_fill_surfaces.keep_types({ stTop, stTopNonplanar, stBottom, stBottomBridge });
                     layerm->m_fill_surfaces.append(new_internal,       stInternal);
                     layerm->m_fill_surfaces.append(new_internal_void,  stInternalVoid);
                     layerm->m_fill_surfaces.append(new_internal_solid, stInternalSolid);
+                    layerm->m_fill_surfaces.append(new_internal_solid_nonplanar, stInternalSolidNonplanar);
                 } // for each layer
             });
         m_print->throw_if_canceled();
@@ -1688,7 +2007,7 @@ void PrintObject::bridge_over_infill()
                 unsupported_area   = diff(unsupported_area, lower_layer_solids);
 
                 for (const LayerRegion *region : layer->regions()) {
-                    SurfacesPtr region_internal_solids = region->fill_surfaces().filter_by_type(stInternalSolid);
+                    SurfacesPtr region_internal_solids = region->fill_surfaces().filter_by_types({stInternalSolid, stInternalSolidNonplanar});
                     for (const Surface *s : region_internal_solids) {
                         Polygons unsupported         = intersection(to_polygons(s->expolygon), unsupported_area);
                         // The following flag marks those surfaces, which overlap with unuspported area, but at least part of them is supported. 

@@ -7,6 +7,7 @@
 #include "Flow.hpp"
 #include "SurfaceCollection.hpp"
 #include "ExtrusionEntityCollection.hpp"
+#include "NonplanarSurface.hpp"
 
 #include <boost/container/small_vector.hpp>
 
@@ -132,6 +133,9 @@ public:
     // ordered collection of extrusion paths to fill surfaces
     // (this collection contains only ExtrusionEntityCollection objects)
     [[nodiscard]] const ExtrusionEntityCollection&  fills() const { return m_fills; }
+
+    // Vector of nonplanar_surfaces which are homed in this layer
+    [[nodiscard]] const NonplanarSurfaces&          nonplanar_surfaces() const { return m_nonplanar_surfaces; }
     
     Flow    flow(FlowRole role) const;
     Flow    flow(FlowRole role, double layer_height) const;
@@ -166,6 +170,20 @@ public:
 
     // Is there any valid extrusion assigned to this LayerRegion?
     bool    has_extrusions() const { return ! this->perimeters().empty() || ! this->fills().empty(); }
+
+    //append a new nonplanar surface to the list skip if already in list
+    void append_nonplanar_surface(NonplanarSurface& surface);
+    // Projects the paths of a collection regarding the structure of a stl mesh
+    void project_nonplanar_extrusion(ExtrusionEntityCollection* collection);
+    /// Projects nonplanar surfaces downwards regarding the structure of the stl mesh.
+    void project_nonplanar_surfaces();
+    ///project a nonplanar path
+    void project_nonplanar_path(ExtrusionPath* path);
+    ///sets the z coordinates correctly for all points TODO move to generation of points
+    void correct_z_on_path(ExtrusionPath *path);
+    //
+    void remove_nonplanar_slices(SurfaceCollection topNonplanar);
+    void append_top_nonplanar_slices(SurfaceCollection topNonplanar);
 
 protected:
     friend class Layer;
@@ -224,6 +242,8 @@ private:
     // ordered collection of extrusion paths to fill surfaces
     // (this collection contains only ExtrusionEntityCollection objects)
     ExtrusionEntityCollection   m_fills;
+
+    NonplanarSurfaces           m_nonplanar_surfaces;
 
     // collection of expolygons representing the bridged areas (thus not
     // needing support material)
@@ -379,9 +399,11 @@ public:
 
     void                    export_region_slices_to_svg(const char *path) const;
     void                    export_region_fill_surfaces_to_svg(const char *path) const;
+    void                    export_lslices_polygons_to_svg(const char *name) const;
     // Export to "out/LayerRegion-name-%d.svg" with an increasing index with every export.
     void                    export_region_slices_to_svg_debug(const char *name) const;
     void                    export_region_fill_surfaces_to_svg_debug(const char *name) const;
+    void                    export_lslices_polygons_to_svg_debug(const char *name) const;
 
     // Is there any valid extrusion assigned to this LayerRegion?
     virtual bool            has_extrusions() const { for (auto layerm : m_regions) if (layerm->has_extrusions()) return true; return false; }

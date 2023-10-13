@@ -234,6 +234,10 @@ public:
 
 typedef std::vector<Polyline3> Polylines3;
 
+extern bool export_to_svg(const char *path, const Polyline &polyline, BoundingBox bbox, const float stroke_width = 1.f);
+extern bool export_to_svg(const char *path, const Polylines &polylines, BoundingBox bbox, const float stroke_width = 1.f);
+extern bool export_to_svg(const char *path, const ThickPolylines &polylines, BoundingBox bbox, const float stroke_width = 1.f);
+
 }
 
 #endif

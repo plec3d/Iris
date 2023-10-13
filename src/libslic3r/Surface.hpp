@@ -24,6 +24,10 @@ enum SurfaceType {
     stInternalVoid,
     // Inner/outer perimeters.
     stPerimeter,
+    // 
+    stTopNonplanar,
+    //
+    stInternalSolidNonplanar,
     // Number of SurfaceType enums.
     stCount,
 };
@@ -37,6 +41,7 @@ public:
     unsigned short  thickness_layers {  1 };  // in layers
     double          bridge_angle     { -1. }; // in radians, ccw, 0 = East, only 0+ (negative means undefined)
     unsigned short  extra_perimeters {  0 };
+    float           distance_to_top  {  0 };
     
     Surface(const Slic3r::Surface &rhs) :
         surface_type(rhs.surface_type), expolygon(rhs.expolygon),
@@ -67,6 +72,7 @@ public:
         thickness_layers = rhs.thickness_layers;
         bridge_angle     = rhs.bridge_angle;
         extra_perimeters = rhs.extra_perimeters;
+        distance_to_top  = rhs.distance_to_top;
         return *this;
     }
 
@@ -78,6 +84,7 @@ public:
         thickness_layers = rhs.thickness_layers;
         bridge_angle     = rhs.bridge_angle;
         extra_perimeters = rhs.extra_perimeters;
+        distance_to_top  = rhs.distance_to_top;
         return *this;
     }
 
@@ -86,12 +93,14 @@ public:
     void   clear() 			   { expolygon.clear(); }
 
     // The following methods do not test for stPerimeter.
-	bool   is_top()      const { return this->surface_type == stTop; }
+	bool   is_top()      const { return this->surface_type == stTop || this->surface_type == stTopNonplanar; }
 	bool   is_bottom()   const { return this->surface_type == stBottom || this->surface_type == stBottomBridge; }
 	bool   is_bridge()   const { return this->surface_type == stBottomBridge || this->surface_type == stInternalBridge; }
 	bool   is_external() const { return this->is_top() || this->is_bottom(); }
 	bool   is_internal() const { return ! this->is_external(); }
-	bool   is_solid()    const { return this->is_external() || this->surface_type == stInternalSolid || this->surface_type == stInternalBridge; }
+	bool   is_internal_solid() const { return this->surface_type == stInternalSolid || this->surface_type == stInternalSolidNonplanar; }
+	bool   is_solid()    const { return this->is_external() || this->surface_type == stInternalSolid || this->surface_type == stInternalSolidNonplanar || this->surface_type == stInternalBridge; }
+	bool   is_nonplanar() const { return this->surface_type == stTopNonplanar || this->surface_type == stInternalSolidNonplanar; }
 };
 
 typedef std::vector<Surface> Surfaces;
@@ -228,9 +237,20 @@ inline void polygons_append(Polygons &dst, SurfacesPtr &&src)
 inline void surfaces_append(Surfaces &dst, const ExPolygons &src, SurfaceType surfaceType) 
 { 
     dst.reserve(dst.size() + src.size());
-    for (const ExPolygon &expoly : src)
+    for (const ExPolygon &expoly : src) {
         dst.emplace_back(Surface(surfaceType, expoly));
+    }
 }
+inline void surfaces_append(Surfaces &dst, const ExPolygons &src, SurfaceType surfaceType, float distance_to_top) 
+{
+    dst.reserve(dst.size() + src.size());
+    for (const ExPolygon &expoly : src) {
+        Surface s = Surface(surfaceType, expoly);
+        s.distance_to_top = distance_to_top;
+        dst.emplace_back(s);
+    }
+}
+
 inline void surfaces_append(Surfaces &dst, const ExPolygons &src, const Surface &surfaceTempl) 
 { 
     dst.reserve(dst.size() + number_polygons(src));
@@ -278,7 +298,8 @@ inline bool surfaces_could_merge(const Surface &s1, const Surface &s2)
         s1.surface_type      == s2.surface_type     &&
         s1.thickness         == s2.thickness        &&
         s1.thickness_layers  == s2.thickness_layers &&
-        s1.bridge_angle      == s2.bridge_angle;
+        s1.bridge_angle      == s2.bridge_angle     &&
+        s1.distance_to_top   == s2.distance_to_top;
 }
 
 class SVG;

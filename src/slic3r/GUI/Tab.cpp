@@ -16,7 +16,6 @@
 #include "ButtonsDescription.hpp"
 #include "Search.hpp"
 #include "OG_CustomCtrl.hpp"
-
 #include <wx/app.h>
 #include <wx/button.h>
 #include <wx/scrolwin.h>
@@ -1459,6 +1458,12 @@ void TabPrint::build()
         optgroup->append_single_option_line("fuzzy_skin_thickness", category_path + "fuzzy-skin-thickness");
         optgroup->append_single_option_line("fuzzy_skin_point_dist", category_path + "fuzzy-skin-point-distance");
 
+        optgroup = page->new_optgroup(L("Nonplanar layers (experimental)"));
+        category_path = "nonplanar-layers_19282821/#";
+        optgroup->append_single_option_line("use_nonplanar_layers", category_path + "use-nonplanar-layers");
+        optgroup->append_single_option_line("nonplanar_layers_angle", category_path + "nonplanar-layers-height");
+        optgroup->append_single_option_line("nonplanar_layers_height", category_path + "nonplanar-layers-height");
+
     page = add_options_page(L("Infill"), "infill");
         category_path = "infill_42#";
         optgroup = page->new_optgroup(L("Infill"));
@@ -1625,6 +1630,7 @@ void TabPrint::build()
         optgroup = page->new_optgroup(L("Advanced"));
         optgroup->append_single_option_line("interface_shells");
         optgroup->append_single_option_line("mmu_segmented_region_max_width");
+            optgroup->append_single_option_line("mmu_segmented_region_interlocking_depth");
 
     page = add_options_page(L("Advanced"), "wrench");
         optgroup = page->new_optgroup(L("Extrusion width"));
@@ -1902,6 +1908,7 @@ void TabFilament::add_filament_overrides_page()
                                         "filament_retract_before_wipe"
                                      })
         create_line_with_near_label_widget(optgroup, opt_key, extruder_idx);
+
 }
 
 void TabFilament::update_filament_overrides_page()
@@ -1910,7 +1917,7 @@ void TabFilament::update_filament_overrides_page()
         return;
     Page* page = m_active_page;
 
-    const auto og_it = std::find_if(page->m_optgroups.begin(), page->m_optgroups.end(), [](const ConfigOptionsGroupShp og) { return og->title == "Retraction"; });
+    auto og_it = std::find_if(page->m_optgroups.begin(), page->m_optgroups.end(), [](const ConfigOptionsGroupShp og) { return og->title == "Retraction"; });
     if (og_it == page->m_optgroups.end())
         return;
     ConfigOptionsGroupShp optgroup = *og_it;
@@ -1933,11 +1940,16 @@ void TabFilament::update_filament_overrides_page()
     const bool have_retract_length = m_config->option("filament_retract_length")->is_nil() ||
                                      m_config->opt_float("filament_retract_length", extruder_idx) > 0;
 
-    for (const std::string& opt_key : opt_keys)
-    {
-        bool is_checked = opt_key=="filament_retract_length" ? true : have_retract_length;
-        update_line_with_near_label_widget(optgroup, opt_key, extruder_idx, is_checked);
-    }
+
+    og_it = std::find_if(page->m_optgroups.begin(), page->m_optgroups.end(), [](const ConfigOptionsGroupShp og) { return og->title == "Retraction when tool is disabled"; });
+    if (og_it == page->m_optgroups.end())
+        return;
+    optgroup = *og_it;
+
+    for (const std::string& opt_key : {"filament_retract_length_toolchange", "filament_retract_restart_extra_toolchange"})
+        update_line_with_near_label_widget(optgroup, opt_key, extruder_idx);
+
+
 }
 
 void TabFilament::create_extruder_combobox()
@@ -1968,8 +1980,16 @@ void TabFilament::update_extruder_combobox()
             m_extruders_cb->Append(format_wxstr("%1% %2%", _L("Extruder"), id), *get_bmp_bundle("funnel"));
     }
 
-    if (m_active_extruder >= int(extruder_cnt))
+    if (m_active_extruder >= int(extruder_cnt)) {
         m_active_extruder = 0;
+           // update selected and, as a result, editing preset
+        const std::string& preset_name = m_preset_bundle->extruders_filaments[0].get_selected_preset_name();
+        m_presets->select_preset_by_name(preset_name, true);
+
+        // To avoid inconsistance between value of active_extruder in FilamentTab and TabPresetComboBox,
+        // which can causes a crash on switch preset from MM printer to SM printer
+        m_presets_choice->set_active_extruder(m_active_extruder);
+    }
 
     m_extruders_cb->SetSelection(m_active_extruder);
 }
@@ -2127,6 +2147,12 @@ void TabFilament::build()
         });
 
 
+        optgroup = page->new_optgroup(L("Toolchange parameters with multi extruder MM printers"));
+        optgroup->append_single_option_line("filament_multitool_ramming");
+        optgroup->append_single_option_line("filament_multitool_ramming_volume");
+        optgroup->append_single_option_line("filament_multitool_ramming_flow");
+
+
     add_filament_overrides_page();
 
 
@@ -2229,6 +2255,13 @@ void TabFilament::toggle_options()
         }
     }
 
+    if (m_active_page->title() == "Advanced")
+    {
+        bool multitool_ramming = m_config->opt_bool("filament_multitool_ramming", 0);
+        toggle_option("filament_multitool_ramming_volume", multitool_ramming);
+        toggle_option("filament_multitool_ramming_flow", multitool_ramming);
+    }
+
     if (m_active_page->title() == "Filament Overrides")
         update_filament_overrides_page();
 
@@ -2286,12 +2319,37 @@ void TabFilament::sys_color_changed()
 
 void TabFilament::load_current_preset()
 {
+    const std::string& selected_filament_name = m_presets->get_selected_preset_name();
+    if (m_active_extruder < 0) {
+        // active extruder was invalidated before load new project file or configuration,
+        // so we have to update active extruder selection from selected filament
+        const std::string& edited_filament_name = m_presets->get_edited_preset().name;
+        assert(!selected_filament_name.empty() && selected_filament_name == edited_filament_name);
+
+        for (int i = 0; i < int(m_preset_bundle->extruders_filaments.size()); i++) {
+            const std::string& selected_extr_filament_name = m_preset_bundle->extruders_filaments[i].get_selected_preset_name();
+            if (selected_extr_filament_name == edited_filament_name) {
+                m_active_extruder = i;
+                break;
+            }
+        }
+        assert(m_active_extruder >= 0);
+
+        m_presets_choice->set_active_extruder(m_active_extruder);
+        if (m_active_extruder != m_extruders_cb->GetSelection())
+            m_extruders_cb->Select(m_active_extruder);
+    }
+
     assert(m_active_extruder >= 0 && m_active_extruder < m_preset_bundle->extruders_filaments.size());
     const std::string& selected_extr_filament_name = m_preset_bundle->extruders_filaments[m_active_extruder].get_selected_preset_name();
-    const std::string& selected_filament_name = m_presets->get_selected_preset_name();
-    if (selected_extr_filament_name != selected_filament_name)
+        if (selected_extr_filament_name != selected_filament_name) {
         m_presets->select_preset_by_name(selected_extr_filament_name, false);
 
+        // To avoid inconsistance between value of active_extruder in FilamentTab and TabPresetComboBox,
+        // which can causes a crash on switch preset from MM printer to SM printer
+        m_presets_choice->set_active_extruder(m_active_extruder);
+    }
+    
     Tab::load_current_preset();
 }
 
@@ -2392,13 +2450,20 @@ void TabPrinter::build_fff()
     m_pages.reserve(30);
 
     auto   *nozzle_diameter = dynamic_cast<const ConfigOptionFloats*>(m_config->option("nozzle_diameter"));
-    m_initial_extruders_count = m_extruders_count = nozzle_diameter->values.size();
+    m_extruders_count = nozzle_diameter->values.size();
+    const std::vector<int> virtual_extruders = static_cast<const ConfigOptionInts*>(m_preset_bundle->printers.get_edited_preset().config.option("virtual_extruder"))->values;
+    std::vector<int> virtual_extruders_cnt;
+    std::copy_if(virtual_extruders.begin(), virtual_extruders.end(), std::back_inserter(virtual_extruders_cnt), [](int i) {
+        return i > -1;
+    });
+    m_extruders_count -= 2;//virtual_extruders_cnt.size();
+    m_initial_extruders_count = m_extruders_count;
     wxGetApp().sidebar().update_objects_list_extruder_column(m_initial_extruders_count);
 
     const Preset* parent_preset = m_printer_technology == ptSLA ? nullptr // just for first build, if SLA printer preset is selected 
                                   : m_presets->get_selected_preset_parent();
-    m_sys_extruders_count = parent_preset == nullptr ? 0 :
-            static_cast<const ConfigOptionFloats*>(parent_preset->config.option("nozzle_diameter"))->values.size();
+    m_sys_extruders_count = parent_preset == nullptr ? 0 : m_extruders_count;
+            //static_cast<const ConfigOptionFloats*>(parent_preset->config.option("nozzle_diameter"))->values.size();
 
     auto page = add_options_page(L("General"), "printer");
         auto optgroup = page->new_optgroup(L("Size and coordinates"));
@@ -2421,7 +2486,7 @@ void TabPrinter::build_fff()
             def.mode = comExpert;
         Option option(def, "extruders_count");
         optgroup->append_single_option_line(option);
-        optgroup->append_single_option_line("single_extruder_multi_material");
+        //optgroup->append_single_option_line("single_extruder_multi_material");
 
         optgroup->m_on_change = [this, optgroup_wk = ConfigOptionsGroupWkp(optgroup)](t_config_option_key opt_key, boost::any value) {
             auto optgroup_sh = optgroup_wk.lock();
@@ -2445,7 +2510,7 @@ void TabPrinter::build_fff()
                             std::vector<double> nozzle_diameters = static_cast<const ConfigOptionFloats*>(m_config->option("nozzle_diameter"))->values;
                             const double frst_diam = nozzle_diameters[0];
 
-                            for (auto cur_diam : nozzle_diameters) {
+                            /*for (auto cur_diam : nozzle_diameters) {
                                 // if value is differs from first nozzle diameter value
                                 if (fabs(cur_diam - frst_diam) > EPSILON) {
                                     const wxString msg_text = _(L("Single Extruder Multi Material is selected, \n"
@@ -2466,7 +2531,7 @@ void TabPrinter::build_fff()
                                     load_config(new_conf);
                                     break;
                                 }
-                            }
+                            }*/
                         }
 
                         m_preset_bundle->update_compatible(PresetSelectCompatibleType::Never);
@@ -2881,7 +2946,8 @@ const std::vector<std::string> extruder_options = {
 };
 
 void TabPrinter::build_extruder_pages(size_t n_before_extruders)
-{
+{   
+
     for (auto extruder_idx = m_extruders_count_old; extruder_idx < m_extruders_count; ++extruder_idx) {
         //# build page
         const wxString&page_name = wxString::Format("Extruder %d", int(extruder_idx + 1));
@@ -2893,10 +2959,9 @@ void TabPrinter::build_extruder_pages(size_t n_before_extruders)
 
         optgroup->m_on_change = [this, extruder_idx](const t_config_option_key&opt_key, boost::any value)
         {
-            const bool is_single_extruder_MM = m_config->opt_bool("single_extruder_multi_material");
             const bool is_nozzle_diameter_changed = opt_key.find_first_of("nozzle_diameter") != std::string::npos;
-
-            if (is_single_extruder_MM && m_extruders_count > 1 && is_nozzle_diameter_changed)
+                
+            if (/*&& m_extruders_count > 1 */ is_nozzle_diameter_changed)
             {
                 SuppressBackgroundProcessingUpdate sbpu;
                 const double new_nd = boost::any_cast<double>(value);
@@ -2939,8 +3004,44 @@ void TabPrinter::build_extruder_pages(size_t n_before_extruders)
             update();
         };
 
-        optgroup = page->new_optgroup(L("Preview"));
-
+        optgroup = page->new_optgroup(L("Mixing extruder"));
+        optgroup->append_single_option_line("mixing_extruder", "", extruder_idx);
+        optgroup->append_single_option_line("nonmixing_extruder", "", extruder_idx);
+        std::vector<unsigned char> mixing_extruder = static_cast<const ConfigOptionBools*>(m_config->option("mixing_extruder"))->values;
+        const bool is_mixing_extruder = mixing_extruder.at(extruder_idx) != 0;
+       
+        optgroup->m_on_change = [this, extruder_idx, page, n_before_extruders](const t_config_option_key&opt_key, boost::any value)
+        {
+            const bool is_mixing_extruder_changed = opt_key.find_first_of("mixing_extruder") != std::string::npos;   
+            if (is_mixing_extruder_changed)
+            {
+                //mixing_extruder.at(extruder_idx) = !is_mixing_extruder;
+                update_dirty();
+                update(); 
+                this->build_extruder_pages(n_before_extruders);
+            }
+            
+        };
+        if(is_mixing_extruder){
+            // show the Color options 
+            auto optgroup = page->new_optgroup(L("Colors"));
+            // store the white and the other colrs
+            optgroup->append_single_option_line("multi_extruder_colors", "", extruder_idx);
+            std::vector<int> multi_extruder = static_cast<const ConfigOptionInts*>(m_config->option("multi_extruder_colors"))->values;
+            if(multi_extruder.at(extruder_idx)){
+                const int is_multi_extruder = multi_extruder.at(extruder_idx);
+                if(is_multi_extruder > 0) optgroup->append_single_option_line("multi_extruder_color1", "", extruder_idx);
+                if(is_multi_extruder > 1) optgroup->append_single_option_line("multi_extruder_color2", "", extruder_idx);
+                if(is_multi_extruder > 2) optgroup->append_single_option_line("multi_extruder_color3", "", extruder_idx);
+                if(is_multi_extruder > 3) optgroup->append_single_option_line("multi_extruder_color4", "", extruder_idx);
+            }
+        }else{
+            optgroup = page->new_optgroup(L("Preview"));
+            Line line = optgroup->create_single_option_line("extruder_colour", "", extruder_idx);
+            //line.append_widget(reset_to_filament_color);
+            optgroup->append_line(line);
+        }
+        /*
         auto reset_to_filament_color = [this, extruder_idx](wxWindow*parent) {
             ScalableButton* btn = new ScalableButton(parent, wxID_ANY, "undo", _L("Reset to Filament Color"),
                                                      wxDefaultSize, wxDefaultPosition, wxBU_LEFT | wxBU_EXACTFIT);
@@ -2967,15 +3068,12 @@ void TabPrinter::build_extruder_pages(size_t n_before_extruders)
             }, btn->GetId());
 
             return sizer;
-        };
-        Line line = optgroup->create_single_option_line("extruder_colour", "", extruder_idx);
-        line.append_widget(reset_to_filament_color);
-        optgroup->append_line(line);
+        };*/
 
         optgroup = page->new_optgroup("");
 
-        auto copy_settings_btn = 
-        line            = { "", ""};
+        //auto copy_settings_btn = 
+        Line line            = { "", ""};
         line.full_width = 1;
         line.widget = [this, extruder_idx](wxWindow* parent) {
             ScalableButton* btn = new ScalableButton(parent, wxID_ANY, "copy", _L("Apply below setting to other extruders"),
@@ -3608,8 +3706,17 @@ bool Tab::select_preset(std::string preset_name, bool delete_current /*=false*/,
             for (PresetUpdate &pu : updates) {
                 pu.old_preset_dirty = (old_printer_technology == pu.technology) && pu.presets->current_is_dirty();
                 pu.new_preset_compatible = (new_printer_technology == pu.technology) && is_compatible_with_printer(pu.presets->get_edited_preset_with_vendor_profile(), new_printer_preset_with_vendor_profile);
+                 bool force_update_edited_preset = false;
+                if (pu.tab_type == Preset::TYPE_FILAMENT && pu.new_preset_compatible) {
+                    // check if edited preset will be still correct after selection new printer 
+                    const int active_extruder    = dynamic_cast<const TabFilament*>(wxGetApp().get_tab(Preset::TYPE_FILAMENT))->get_active_extruder();
+                    const int extruder_count_new = int(dynamic_cast<const ConfigOptionFloats*>(new_printer_preset.config.option("nozzle_diameter"))->size());
+                    // if active_extruder is bigger than extruders_count,
+                    // then it means that edited filament preset will be changed and we have to check this changes
+                    force_update_edited_preset = active_extruder >= extruder_count_new;
+                }
                 if (!canceled)
-                    canceled = pu.old_preset_dirty && !pu.new_preset_compatible && !may_discard_current_dirty_preset(pu.presets, preset_name);
+                    canceled = pu.old_preset_dirty && (!pu.new_preset_compatible || force_update_edited_preset) && !may_discard_current_dirty_preset(pu.presets, preset_name);
             }
             if (!canceled) {
                 for (PresetUpdate &pu : updates) {
@@ -3652,7 +3759,8 @@ bool Tab::select_preset(std::string preset_name, bool delete_current /*=false*/,
             }
         }
 
- //       update_tab_ui(); //! ysFIXME delete after testing
+        // ! update preset combobox, to revert previously selection
+        update_tab_ui();
 
         // Trigger the on_presets_changed event so that we also restore the previous value in the plater selector,
         // if this action was initiated from the plater.
@@ -4074,7 +4182,7 @@ void Tab::rename_preset()
     if (dlg.ShowModal() != wxID_OK)
         return;
 
-    const std::string new_name = into_u8(dlg.get_name());
+    const std::string new_name = dlg.get_name();
     if (new_name.empty() || new_name == m_presets->get_selected_preset().name)
         return;
 
@@ -4671,8 +4779,15 @@ void TabPrinter::cache_extruder_cnt(const DynamicPrintConfig* config/* = nullptr
         return;
 
     // get extruders count 
-    auto* nozzle_diameter = dynamic_cast<const ConfigOptionFloats*>(cached_config.option("nozzle_diameter"));
-    m_cache_extruder_count = nozzle_diameter->values.size(); //m_extruders_count;
+    auto   *nozzle_diameter = dynamic_cast<const ConfigOptionFloats*>(m_config->option("nozzle_diameter"));
+    m_extruders_count = nozzle_diameter->values.size();
+    const std::vector<int> virtual_extruders = static_cast<const ConfigOptionInts*>(m_preset_bundle->printers.get_edited_preset().config.option("virtual_extruder"))->values;
+    std::vector<int> virtual_extruders_cnt;
+    std::copy_if(virtual_extruders.begin(), virtual_extruders.end(), std::back_inserter(virtual_extruders_cnt), [](int i) {
+        return i > -1;
+    });
+    m_extruders_count -= virtual_extruders_cnt.size();
+    m_cache_extruder_count = /*nozzle_diameter->values.size(); */ m_extruders_count;
 }
 
 bool TabPrinter::apply_extruder_cnt_from_cache()

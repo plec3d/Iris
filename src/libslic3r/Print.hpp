@@ -17,6 +17,8 @@
 #include "GCode/ThumbnailData.hpp"
 #include "GCode/GCodeProcessor.hpp"
 #include "MultiMaterialSegmentation.hpp"
+#include "NonplanarSurface.hpp"
+#include "NonplanarFacet.hpp"
 
 #include "libslic3r.h"
 
@@ -67,7 +69,9 @@ enum PrintStep : unsigned int {
 
 enum PrintObjectStep : unsigned int {
     posSlice, posPerimeters, posPrepareInfill,
-    posInfill, posIroning, posSupportSpotsSearch, posSupportMaterial, posEstimateCurledExtrusions, posCount,
+    posInfill, posIroning, posSupportSpotsSearch, 
+    posSupportMaterial, posNonplanarProjection, posEstimateCurledExtrusions, 
+    posCount,
 };
 
 // A PrintRegion object represents a group of volumes to print
@@ -264,6 +268,8 @@ public:
     coord_t 				     height() const         { return m_size.z(); }
     // Centering offset of the sliced mesh from the scaled and rotated mesh of the model.
     const Point& 			     center_offset() const  { return m_center_offset; }
+    // 
+    NonplanarSurfaces            nonplanar_surfaces()   { return m_nonplanar_surfaces; }
 
     bool                         has_brim() const       {
         return this->config().brim_type != btNoBrim
@@ -378,8 +384,16 @@ private:
     void estimate_curled_extrusions();
 
     void slice_volumes();
+    void make_slices();
+    void lslices_were_updated();
     // Has any support (not counting the raft).
     void detect_surfaces_type();
+    void merge_nonplanar_surfaces();
+    void debug_svg_print();
+    bool check_nonplanar_collisions(NonplanarSurface &surface);
+    void project_nonplanar_surfaces();
+    void find_nonplanar_surfaces();
+    void detect_nonplanar_surfaces();
     void process_external_surfaces();
     void discover_vertical_shells();
     void bridge_over_infill();
@@ -413,6 +427,8 @@ private:
     // this is set to true when LayerRegion->slices is split in top/internal/bottom
     // so that next call to make_perimeters() performs a union() before computing loops
     bool                    				m_typed_slices = false;
+
+    NonplanarSurfaces                       m_nonplanar_surfaces;
 
     std::pair<FillAdaptive::OctreePtr, FillAdaptive::OctreePtr> m_adaptive_fill_octrees;
     FillLightning::GeneratorPtr m_lightning_generator;

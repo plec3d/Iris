@@ -418,7 +418,7 @@ bool has_duplicate_points(const ExPolygons &expolys)
 {
 #if 1
     // Check globally.
-#if 0
+#if 1
     // Detect duplicates by sorting with quicksort. It is quite fast, but ankerl::unordered_dense is around 1/4 faster.
     Points allpts;
     allpts.reserve(count_points(expolys));

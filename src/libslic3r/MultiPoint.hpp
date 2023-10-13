@@ -81,6 +81,7 @@ public:
         }
     }
 
+    static bool needs_zmove(const Points &pts);
     static Points douglas_peucker(const Points &points, const double tolerance);
     static Points visivalingam(const Points& pts, const double& tolerance);
 

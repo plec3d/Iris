@@ -103,8 +103,28 @@ bool MultiPoint::remove_duplicate_points()
     return false;
 }
 
+bool
+MultiPoint::needs_zmove(const Points &pts)
+{
+    coord_t z = -1;
+    //check if any point in travel is below the layer z
+    for (Point p : pts)
+    {
+        if(z == -1) {
+            z = p.nonplanar_z;
+        }
+        else if ((p.nonplanar_z != -1) && (p.nonplanar_z != z))
+            return true;
+    }
+
+    return false;
+}
+
 Points MultiPoint::douglas_peucker(const Points &pts, const double tolerance)
 {
+    if(MultiPoint::needs_zmove(pts))
+        return pts;
+
     Points result_pts;
 	auto tolerance_sq = int64_t(sqr(tolerance));
     if (! pts.empty()) {

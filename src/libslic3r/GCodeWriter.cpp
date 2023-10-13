@@ -274,7 +274,7 @@ std::string GCodeWriter::travel_to_xyz(const Vec3d &point, const std::string &co
     // FIXME: This function was not being used when travel_speed_z was separated (bd6badf).
     // Calculation of feedrate was not updated accordingly. If you want to use
     // this function, fix it first.
-    std::terminate();
+    // std::terminate();
 
     /*  If target Z is lower than current Z but higher than nominal Z we
         don't perform the Z move but we only move in the XY plane and
@@ -360,16 +360,16 @@ std::string GCodeWriter::extrude_to_xy(const Vec2d &point, double dE, const std:
     return w.string();
 }
 
-#if 0
+#if 1
 std::string GCodeWriter::extrude_to_xyz(const Vec3d &point, double dE, const std::string &comment)
 {
     m_pos = point;
     m_lifted = 0;
-    m_extruder->extrude(dE);
+    //m_extruder->extrude(dE);
     
     GCodeG1Formatter w;
     w.emit_xyz(point);
-    w.emit_e(m_extrusion_axis, m_extruder->E());
+    w.emit_e(m_extrusion_axis, m_extruder->extrude(dE).second);
     w.emit_comment(this->config.gcode_comments, comment);
     return w.string();
 }

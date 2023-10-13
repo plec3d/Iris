@@ -26,6 +26,7 @@ enum class ExtrusionRoleModifier : uint16_t {
     Solid,
     Ironing,
     Bridge,
+    Nonplanar,
 // 3) Special types
     // Indicator that the extrusion role was mixed from multiple differing extrusion roles,
     // for example from Support and SupportInterface.
@@ -55,9 +56,11 @@ struct ExtrusionRole : public ExtrusionRoleModifiers
     static constexpr const ExtrusionRoleModifiers InternalInfill{ ExtrusionRoleModifier::Infill };
     // Solid internal infill.
     static constexpr const ExtrusionRoleModifiers SolidInfill{ ExtrusionRoleModifier::Infill | ExtrusionRoleModifier::Solid };
+    static constexpr const ExtrusionRoleModifiers SolidInfillNonplanar{ ExtrusionRoleModifier::Infill | ExtrusionRoleModifier::Solid | ExtrusionRoleModifier::Nonplanar };
     // Top solid infill (visible).
     //FIXME why there is no bottom solid infill type?
     static constexpr const ExtrusionRoleModifiers TopSolidInfill{ ExtrusionRoleModifier::Infill | ExtrusionRoleModifier::Solid | ExtrusionRoleModifier::External };
+    static constexpr const ExtrusionRoleModifiers TopSolidInfillNonplanar{ ExtrusionRoleModifier::Infill | ExtrusionRoleModifier::Solid | ExtrusionRoleModifier::External | ExtrusionRoleModifier::Nonplanar };
     // Ironing infill at the top surfaces.
     static constexpr const ExtrusionRoleModifiers Ironing{ ExtrusionRoleModifier::Infill | ExtrusionRoleModifier::Solid | ExtrusionRoleModifier::Ironing | ExtrusionRoleModifier::External };
     // Visible bridging infill at the bottom of an object.
@@ -84,6 +87,7 @@ struct ExtrusionRole : public ExtrusionRoleModifiers
     bool is_solid_infill() const { return this->is_infill() && this->ExtrusionRoleModifiers::has(ExtrusionRoleModifier::Solid); }
     bool is_external() const { return this->ExtrusionRoleModifiers::has(ExtrusionRoleModifier::External); }
     bool is_bridge() const { return this->ExtrusionRoleModifiers::has(ExtrusionRoleModifier::Bridge); }
+    bool is_nonplanar() const { return this->ExtrusionRoleModifiers::has(ExtrusionRoleModifier::Nonplanar); }
 
     bool is_support() const { return this->ExtrusionRoleModifiers::has(ExtrusionRoleModifier::Support); }
     bool is_support_base() const { return this->is_support() && ! this->is_external(); }
@@ -108,7 +112,9 @@ enum class GCodeExtrusionRole : uint8_t {
     OverhangPerimeter,
     InternalInfill,
     SolidInfill,
+    SolidInfillNonplanar,
     TopSolidInfill,
+    TopSolidInfillNonplanar,
     Ironing,
     BridgeInfill,
     GapFill,

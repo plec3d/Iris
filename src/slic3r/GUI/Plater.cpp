@@ -7193,6 +7193,51 @@ std::vector<std::string> Plater::get_colors_for_color_print(const GCodeProcessor
     return colors;
 }
 
+void Plater::set_extruder_count(int idx, bool virtualExtruders){
+    DynamicPrintConfig* config = &wxGetApp().preset_bundle->printers.get_edited_preset().config;
+    config->set_num_extruders(idx, virtualExtruders);
+}
+
+void Plater::set_extruder_color(std::string color, int idx){
+    DynamicPrintConfig* config = &wxGetApp().preset_bundle->printers.get_edited_preset().config;
+    config->set_extruder_color(color, idx);
+}
+
+void Plater::add_virtual_extruders(std::vector<std::string> colors, int idx, int num_extruders){
+    DynamicPrintConfig* config = &wxGetApp().preset_bundle->printers.get_edited_preset().config;
+    config->add_virtual_extruders(colors, idx, num_extruders);
+}
+
+bool Plater::store_mixing_color(std::string& color, int extruder_id, int to_delete){
+    DynamicPrintConfig &config = wxGetApp().preset_bundle->printers.get_edited_preset().config;
+    bool finished = config.store_mixing_color(color, extruder_id, to_delete);
+    const std::vector<std::string>& unselected_options = {"multi_extruder_colors"};
+    const std::string& name = wxGetApp().preset_bundle->printers.get_edited_preset().name;
+    wxGetApp().preset_bundle->save_changes_for_preset(name, Slic3r::Preset::TYPE_PRINTER, unselected_options);
+    this->on_config_change(wxGetApp().preset_bundle->full_config());
+    return finished;
+}
+
+int Plater::id_like_this_virtual_extruder(std::string& color, int extruder_id, int num_extruders, bool noNew){
+    DynamicPrintConfig* config = &wxGetApp().preset_bundle->printers.get_edited_preset().config;
+    int id = config->id_like_this_virtual_extruder(color, extruder_id, num_extruders, noNew);
+    wxGetApp().preset_bundle->printers.get_edited_preset().set_num_extruders(num_extruders+1);
+    on_extruders_change(num_extruders+1);
+    wxGetApp().mainframe->update_menubar();
+    TabPrinter* tab_print = static_cast<TabPrinter*>(wxGetApp().get_tab(Preset::TYPE_PRINTER));
+    tab_print->extruders_count_changed(num_extruders+1);
+    tab_print->update_dirty();
+    tab_print->reload_config();
+    tab_print->update();
+    wxGetApp().mainframe->on_config_changed(config);
+    return id;
+}
+
+void Plater::remove_all_virtual_extruders(){
+    DynamicPrintConfig* config = &wxGetApp().preset_bundle->printers.get_edited_preset().config;
+    config->remove_all_virtual_extruders();
+}
+
 wxString Plater::get_project_filename(const wxString& extension) const
 {
     return p->get_project_filename(extension);

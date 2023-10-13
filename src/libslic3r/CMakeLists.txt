@@ -221,6 +221,10 @@ set(SLIC3R_SOURCES
     MutablePriorityQueue.hpp
     NormalUtils.cpp
     NormalUtils.hpp
+    NonplanarFacet.cpp
+    NonplanarFacet.hpp
+    NonplanarSurface.cpp
+    NonplanarSurface.hpp
     NSVGUtils.cpp
     NSVGUtils.hpp
     ObjectID.cpp

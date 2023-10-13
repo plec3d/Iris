@@ -2459,7 +2459,10 @@ void GCode::process_layer_single_object(
     };
 
     ExtrusionEntitiesPtr temp_fill_extrusions;
-    if (const Layer *layer = layer_to_print.object_layer; layer)
+    if (const Layer *layer = layer_to_print.object_layer; layer) {
+#ifdef SLIC3R_DEBUG_SLICE_PROCESSING
+        layer->export_lslices_polygons_to_svg_debug("process_gcode_layer");
+#endif
         for (size_t idx : layer->lslice_indices_sorted_by_print_order) {
             const LayerSlice &lslice = layer->lslices_ex[idx];
             auto extrude_infill_range = [&](
@@ -2472,15 +2475,25 @@ void GCode::process_layer_single_object(
                 for (auto it_fill_range = it_fill_ranges_begin; it_fill_range != it_fill_ranges_end; ++ it_fill_range) {
                     assert(it_fill_range->region() == it_fill_ranges_begin->region());
                     for (uint32_t fill_id : *it_fill_range) {
-                        assert(dynamic_cast<ExtrusionEntityCollection*>(fills.entities[fill_id]));
-                        if (auto *eec = static_cast<ExtrusionEntityCollection*>(fills.entities[fill_id]);
-                            (eec->role() == ExtrusionRole::Ironing) == ironing && shall_print_this_extrusion_collection(eec, region)) {
+                        auto *eec = static_cast<ExtrusionEntityCollection*>(fills.entities[fill_id]);
+                        assert(eec);
+                        if ((eec->role() == ExtrusionRole::Ironing) == ironing && shall_print_this_extrusion_collection(eec, region)) {
+#ifdef SLIC3R_DEBUG_SLICE_PROCESSING
+                                static int extrude_infill_range_run = 0;
+                                eec->export_to_svg(debug_out_path("Layer-%d_gcode-extrude_infill_range-shall-be-printed-%u.svg", layerm.layer()->id(), extrude_infill_range_run++).c_str());
+#endif
                             if (eec->can_reverse())
                                 // Flatten the infill collection for better path planning.
-                                for (auto *ee : eec->entities)
+                                for (auto *ee : eec->entities) {
                                     temp_fill_extrusions.emplace_back(ee);
+                                }
                             else
                                 temp_fill_extrusions.emplace_back(eec);
+                        } else {
+#ifdef SLIC3R_DEBUG_SLICE_PROCESSING
+                                static int iRun = 0;
+                                eec->export_to_svg(debug_out_path("Layer-%d_gcode-extrude_infill_range-shall-not-be-printed-%u.svg", layerm.layer()->id(), iRun++).c_str());
+#endif
                         }
                     }
                 }
@@ -2491,17 +2504,30 @@ void GCode::process_layer_single_object(
                     // Will parallel access of initial G-code preview to these extrusions while reordering them at backend cause issues?
                     chain_and_reorder_extrusion_entities(temp_fill_extrusions, &m_last_pos);
                     const auto extrusion_name = ironing ? "ironing"sv : "infill"sv;
-                    for (const ExtrusionEntity *fill : temp_fill_extrusions)
+                    for (const ExtrusionEntity *fill : temp_fill_extrusions) {
                         if (auto *eec = dynamic_cast<const ExtrusionEntityCollection*>(fill); eec) {
-                            for (const ExtrusionEntity *ee : eec->chained_path_from(m_last_pos).entities)
+                            for (const ExtrusionEntity *ee : eec->chained_path_from(m_last_pos).entities) {
+#ifdef SLIC3R_DEBUG_SLICE_PROCESSING
+                                static int iRun = 0;
+                                eec->export_to_svg(debug_out_path("Layer-%d_gcode-extrude_infill_range-collection-%u.svg", layerm.layer()->id(), iRun++).c_str());
+#endif
                                 gcode += this->extrude_entity(*ee, extrusion_name);
-                        } else
+                            }
+                        } else {
+#ifdef SLIC3R_DEBUG_SLICE_PROCESSING
+                                static int iRun = 0;
+                                export_to_svg(debug_out_path("Layer-%d_gcode-extrude_infill_range-entity-%u.svg", layerm.layer()->id(), iRun++).c_str(), 
+                                    fill->as_polyline(), get_extents(layerm.slices().surfaces), scale_(0.1f));
+#endif
                             gcode += this->extrude_entity(*fill, extrusion_name);
+                        }
+                    }
                 }
             };
 
             //FIXME order islands?
             // Sequential tool path ordering of multiple parts within the same object, aka. perimeter tracking (#5511)
+            BOOST_LOG_TRIVIAL(trace) << "Generating GCode for layer " << layer->id() << " - slice " << idx << " has " << lslice.islands.size() << " islands";
             for (const LayerIsland &island : lslice.islands) {
                 auto process_perimeters = [&]() {
                     const LayerRegion &layerm = *layer->get_region(island.perimeters.region());
@@ -2510,9 +2536,13 @@ void GCode::process_layer_single_object(
                     const PrintRegion &region = print.get_print_region(layerm.region().print_region_id());
                     bool first = true;
                     for (uint32_t perimeter_id : island.perimeters) {
-                        assert(dynamic_cast<const ExtrusionEntityCollection*>(layerm.perimeters().entities[perimeter_id]));
-                        if (const auto *eec = static_cast<const ExtrusionEntityCollection*>(layerm.perimeters().entities[perimeter_id]);
-                            shall_print_this_extrusion_collection(eec, region)) {
+                        const auto *eec = static_cast<const ExtrusionEntityCollection*>(layerm.perimeters().entities[perimeter_id]);
+                        assert(eec);
+                        if (shall_print_this_extrusion_collection(eec, region)) {
+#ifdef SLIC3R_DEBUG_SLICE_PROCESSING
+                                static int iRun = 0;
+                                eec->export_to_svg(debug_out_path("Layer-%d_gcode-process_perimeters-%u.svg", layerm.layer()->id(), iRun++).c_str());
+#endif
                             // This may not apply to Arachne, but maybe the Arachne gap fill should disable reverse as well?
                             // assert(! eec->can_reverse());
                             if (first) {
@@ -2520,8 +2550,14 @@ void GCode::process_layer_single_object(
                                 init_layer_delayed();
                                 m_config.apply(region.config());
                             }
-                            for (const ExtrusionEntity *ee : *eec)
+                            for (const ExtrusionEntity *ee : *eec) {
                                 gcode += this->extrude_entity(*ee, comment_perimeter, -1.);
+                            }
+                        } else {
+#ifdef SLIC3R_DEBUG_SLICE_PROCESSING
+                                static int iRun = 0;
+                                eec->export_to_svg(debug_out_path("Layer-%d_gcode-process_perimeters-not-printed-%u.svg", layerm.layer()->id(), iRun++).c_str());
+#endif
                         }
                     }
                 };
@@ -2535,6 +2571,7 @@ void GCode::process_layer_single_object(
                         it = it_end;
                     }
                 };
+                BOOST_LOG_TRIVIAL(trace) << "Generating GCode for layer " << layer->id() << " island - " << island.fills.size() << " fills, " << island.perimeters.size() << " perimeters.";
                 if (print.config().infill_first) {
                     process_infill();
                     process_perimeters();
@@ -2558,6 +2595,7 @@ void GCode::process_layer_single_object(
                 }
             }
         }
+    }
     if (! first && this->config().gcode_label_objects)
         gcode += std::string("; stop printing object ") + print_object.model_object()->name + " id:" + std::to_string(object_id) + " copy " + std::to_string(print_instance.instance_id) + "\n";
 }
@@ -2749,10 +2787,11 @@ std::string GCode::extrude_loop(ExtrusionLoop loop, const std::string_view descr
         // Shift by no more than a nozzle diameter.
         //FIXME Hiding the seams will not work nicely for very densely discretized contours!
         Point  pt = ((nd * nd >= l2) ? p2 : (p1 + v * (nd / sqrt(l2)))).cast<coord_t>();
+        pt.nonplanar_z = paths.front().polyline.points.front().nonplanar_z;
         // Rotate pt inside around the seam point.
         pt.rotate(angle_inside / 3., paths.front().polyline.points.front());
         // generate the travel move
-        gcode += m_writer.travel_to_xy(this->point_to_gcode(pt), "move inwards before travel");
+        gcode += m_writer.travel_to_xyz(this->point3_to_gcode(pt), "move inwards before travel");
     }
 
     return gcode;
@@ -2793,6 +2832,11 @@ std::string GCode::extrude_multi_path(ExtrusionMultiPath multipath, const std::s
 
 std::string GCode::extrude_entity(const ExtrusionEntity &entity, const std::string_view description, double speed)
 {
+#ifdef SLIC3R_DEBUG_SLICE_PROCESSING
+    static int extrude_infill_range_run = 0;
+    export_to_svg(debug_out_path("gcode-extrude_entity-%u.svg", extrude_infill_range_run++).c_str(), 
+        entity.as_polyline(), get_extents(entity.as_polyline()), scale_(0.1f));
+#endif
     if (const ExtrusionPath* path = dynamic_cast<const ExtrusionPath*>(&entity))
         return this->extrude_path(*path, description, speed);
     else if (const ExtrusionMultiPath* multipath = dynamic_cast<const ExtrusionMultiPath*>(&entity))
@@ -2943,7 +2987,7 @@ std::string GCode::_extrude(const ExtrusionPath &path, const std::string_view de
             acceleration = m_config.first_layer_acceleration_over_raft.value;
         } else if (m_config.bridge_acceleration.value > 0 && path.role().is_bridge()) {
             acceleration = m_config.bridge_acceleration.value;
-        } else if (m_config.top_solid_infill_acceleration > 0 && path.role() == ExtrusionRole::TopSolidInfill) {
+        } else if (m_config.top_solid_infill_acceleration > 0 && (path.role() == ExtrusionRole::TopSolidInfill || path.role() == ExtrusionRole::TopSolidInfillNonplanar)) {
             acceleration = m_config.top_solid_infill_acceleration.value;
         } else if (m_config.solid_infill_acceleration > 0 && path.role().is_solid_infill()) {
             acceleration = m_config.solid_infill_acceleration.value;
@@ -2976,9 +3020,9 @@ std::string GCode::_extrude(const ExtrusionPath &path, const std::string_view de
             speed = m_config.get_abs_value("bridge_speed");
         } else if (path.role() == ExtrusionRole::InternalInfill) {
             speed = m_config.get_abs_value("infill_speed");
-        } else if (path.role() == ExtrusionRole::SolidInfill) {
+        } else if (path.role() == ExtrusionRole::SolidInfill || path.role() == ExtrusionRole::SolidInfillNonplanar) {
             speed = m_config.get_abs_value("solid_infill_speed");
-        } else if (path.role() == ExtrusionRole::TopSolidInfill) {
+        } else if (path.role() == ExtrusionRole::TopSolidInfill || path.role() == ExtrusionRole::TopSolidInfillNonplanar) {
             speed = m_config.get_abs_value("top_solid_infill_speed");
         } else if (path.role() == ExtrusionRole::Ironing) {
             speed = m_config.get_abs_value("ironing_speed");
@@ -3118,15 +3162,15 @@ std::string GCode::_extrude(const ExtrusionPath &path, const std::string_view de
             comment = description;
             comment += description_bridge;
         }
-        Vec2d prev = this->point_to_gcode_quantized(path.polyline.points.front());
+        Vec3d prev3 = this->point3_to_gcode_quantized(path.polyline.points.front());
         auto  it   = path.polyline.points.begin();
         auto  end  = path.polyline.points.end();
         for (++ it; it != end; ++ it) {
-            Vec2d p = this->point_to_gcode_quantized(*it);
-            const double line_length = (p - prev).norm();
+            Vec3d p3 = this->point3_to_gcode_quantized(*it);
+            const double line_length = (p3 - prev3).norm();
             path_length += line_length;
-            gcode += m_writer.extrude_to_xy(p, e_per_mm * line_length, comment);
-            prev = p;
+            gcode += m_writer.extrude_to_xyz(p3, e_per_mm * line_length, comment);
+            prev3 = p3;
         }
     } else {
         std::string marked_comment;
@@ -3138,13 +3182,13 @@ std::string GCode::_extrude(const ExtrusionPath &path, const std::string_view de
         double last_set_fan_speed = new_points[0].fan_speed;
         gcode += m_writer.set_speed(last_set_speed, "", cooling_marker_setspeed_comments);
         gcode += "\n;_SET_FAN_SPEED" + std::to_string(int(last_set_fan_speed)) + "\n";
-        Vec2d prev = this->point_to_gcode_quantized(new_points[0].p);
+        Vec3d prev3 = this->point3_to_gcode_quantized(new_points[0].p);
         for (size_t i = 1; i < new_points.size(); i++) {
             const ProcessedPoint &processed_point = new_points[i];
-            Vec2d                 p               = this->point_to_gcode_quantized(processed_point.p);
-            const double          line_length     = (p - prev).norm();
-            gcode += m_writer.extrude_to_xy(p, e_per_mm * line_length, marked_comment);
-            prev             = p;
+            Vec3d                 p3              = this->point3_to_gcode_quantized(processed_point.p);
+            const double          line_length     = (p3 - prev3).norm();
+            gcode += m_writer.extrude_to_xyz(p3, e_per_mm * line_length, marked_comment);
+            prev3             = p3;
             double new_speed = processed_point.speed * 60.0;
             if (last_set_speed != new_speed) {
                 gcode += m_writer.set_speed(new_speed, "", cooling_marker_setspeed_comments);
@@ -3186,6 +3230,8 @@ std::string GCode::travel_to(const Point &point, ExtrusionRole role, std::string
 
     // check whether a straight travel move would need retraction
     bool needs_retraction             = this->needs_retraction(travel, role);
+    // check whether we need to move to a different z layer
+    bool needs_zmove                  = this->needs_zmove(travel);
     // check whether wipe could be disabled without causing visible stringing
     bool could_be_wipe_disabled       = false;
     // Save state of use_external_mp_once for the case that will be needed to call twice m_avoid_crossing_perimeters.travel_to.
@@ -3232,10 +3278,23 @@ std::string GCode::travel_to(const Point &point, ExtrusionRole role, std::string
     // use G1 because we rely on paths being straight (G0 may make round paths)
     if (travel.size() >= 2) {
 
+        // Move Z up if necessary
+        if (needs_zmove) {
+            float move_z = unscale<double>(travel.points[0].nonplanar_z);
+            if(travel.points[0].nonplanar_z == -1)
+                move_z = this->layer()->print_z;
+            gcode += m_writer.travel_to_z(move_z, "Move up for non planar extrusion");
+        }
+
         gcode += m_writer.set_travel_acceleration((unsigned int)(m_config.travel_acceleration.value + 0.5));
 
-        for (size_t i = 1; i < travel.size(); ++ i)
-            gcode += m_writer.travel_to_xy(this->point_to_gcode(travel.points[i]), comment);
+        for (size_t i = 1; i < travel.size(); ++ i) {
+            if (needs_zmove) {
+                gcode += m_writer.travel_to_xyz(this->point3_to_gcode(travel.points[i]), comment);
+            } else {
+                gcode += m_writer.travel_to_xy(this->point_to_gcode(travel.points[i]), comment);
+            }
+        }
 
         if (! GCodeWriter::supports_separate_travel_acceleration(config().gcode_flavor)) {
             // In case that this flavor does not support separate print and travel acceleration,
@@ -3243,8 +3302,18 @@ std::string GCode::travel_to(const Point &point, ExtrusionRole role, std::string
             gcode += m_writer.set_travel_acceleration((unsigned int)(m_config.travel_acceleration.value + 0.5));
         }
 
+        if (needs_zmove) {
+            float move_z = unscale<double>(point.nonplanar_z);
+            if(point.nonplanar_z == -1) {
+                move_z = this->layer()->print_z;
+            }
+            gcode += m_writer.travel_to_z(move_z, "Move down for non planar extrusion");
+        }
+
         this->set_last_pos(travel.points.back());
     }
+
+
     return gcode;
 }
 
@@ -3285,6 +3354,24 @@ bool GCode::needs_retraction(const Polyline &travel, ExtrusionRole role)
 
     // retract if only_retract_when_crossing_perimeters is disabled or doesn't apply
     return true;
+}
+
+bool
+GCode::needs_zmove(const Polyline &travel)
+{
+    if (travel.length() < scale_(1.0)) {
+        // skip zmove if the move is shorter 1 mm
+        return false;
+    }
+
+    //check if any point in travel is below the layer z
+    for (Point p : travel.points)
+    {
+        if ((p.nonplanar_z != -1) && (p.nonplanar_z < scale_(this->layer()->print_z)))
+            return true;
+    }
+
+    return false;
 }
 
 std::string GCode::retract(bool toolchange)
@@ -3421,10 +3508,26 @@ Vec2d GCode::point_to_gcode(const Point &point) const
     return unscaled<double>(point) + m_origin - extruder_offset;
 }
 
+// convert a model-space scaled point into G-code coordinates
+Vec3d GCode::point3_to_gcode(const Point &point) const
+{
+    Vec2d extruder_offset = EXTRUDER_CONFIG(extruder_offset);
+    double p_x = unscaled<double>(point.x()) + m_origin.x() - extruder_offset.x();
+    double p_y = unscaled<double>(point.y()) + m_origin.y() - extruder_offset.y();
+    double p_z = point.nonplanar_z == -1 ? this->layer()->print_z : unscale<double>(point.nonplanar_z);
+    return { p_x, p_y, p_z };
+}
+
 Vec2d GCode::point_to_gcode_quantized(const Point &point) const
 {
     Vec2d p = this->point_to_gcode(point);
     return { GCodeFormatter::quantize_xyzf(p.x()), GCodeFormatter::quantize_xyzf(p.y()) };
+}
+
+Vec3d GCode::point3_to_gcode_quantized(const Point &point) const
+{
+    Vec3d p = this->point3_to_gcode(point);
+    return { GCodeFormatter::quantize_xyzf(p.x()), GCodeFormatter::quantize_xyzf(p.y()), GCodeFormatter::quantize_xyzf(p.z()) };
 }
 
 // convert a model-space scaled point into G-code coordinates
@@ -3435,7 +3538,6 @@ Point GCode::gcode_to_point(const Vec2d &point) const
         // This function may be called at the very start from toolchange G-code when the extruder is not assigned yet.
         pt += m_config.extruder_offset.get_at(extruder->id());
     return scaled<coord_t>(pt);
-        
 }
 
 }   // namespace Slic3r

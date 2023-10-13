@@ -746,4 +746,74 @@ bool trafos_differ_in_rotation_by_z_and_mirroring_by_xy_only(const Transform3d &
     return std::abs(d * d) < EPSILON * lx2 * ly2;
 }
 
+bool
+Point_in_triangle(Vec2f pt, Vec2f v1, Vec2f v2, Vec2f v3)
+{
+    //Check if point is right of every edge
+    if (sign(pt, v1, v2) <= 0.0f) return false;
+    if (sign(pt, v2, v3) <= 0.0f) return false;
+    if (sign(pt, v3, v1) <= 0.0f) return false;
+
+    return true;
+}
+
+//https://graphics.stanford.edu/~mdfisher/Code/Engine/Plane.cpp.html
+coord_t
+Project_point_on_plane(Vec3f v1, Vec3f n, Point pt)
+{
+    //if no intersection leave point unchanged (should never happen)
+    if(n.z() == 0) {
+        return -1;
+    }
+    
+    //unscale point for calculations
+    float px = unscale<float>(pt.x());
+    float py = unscale<float>(pt.y());
+    float pz = 0;
+
+    //Calculate space plane
+    float d = -(v1.x() * n.x() + v1.y() * n.y() + v1.z() * n.z());
+
+    float u = -(n.x() * px + n.y() * py + n.z() * pz + d) / n.z();
+
+    //scale up again
+    return scale_(u);
+}
+
+// http://paulbourke.net/geometry/pointlineplane/index.html
+Vec3d*
+Line_intersection(Vec3d p1, Vec3d p2, Point p3, Point p4) {
+
+    float denom = ((p4.y() - p3.y())*(p2.x() - p1.x())) -
+                  ((p4.x() - p3.x())*(p2.y() - p1.y()));
+
+    float nume_a = ((p4.x() - p3.x())*(p1.y() - p3.y())) -
+                   ((p4.y() - p3.y())*(p1.x() - p3.x()));
+
+    float nume_b = ((p2.x() - p1.x())*(p1.y() - p3.y())) -
+                   ((p2.y() - p1.y())*(p1.x() - p3.x()));
+
+    if(denom == 0.0f)
+    {
+        return NULL;
+    }
+
+    float ua = nume_a / denom;
+    float ub = nume_b / denom;
+
+    if(ua >= 0.0f && ua <= 1.0f && ub >= 0.0f && ub <= 1.0f)
+    {
+        // Get the intersection point anc calculate z component
+        Vec3d* ret = new Vec3d();
+        ret->x() = p1.x() + ua*(p2.x() - p1.x());
+        ret->y() = p1.y() + ua*(p2.y() - p1.y());
+        ret->z() = p1.z() - ((sqrt((p1.x()-ret->x())*(p1.x()-ret->x()) + (p1.y()-ret->y())*(p1.y()-ret->y()))
+                  / sqrt((p1.x()-p2.x())*(p1.x()-p2.x()) + (p1.y()-p2.y())*(p1.y()-p2.y())))
+                  * (p1.z() - p2.z()));
+        return ret;
+    }
+
+    return NULL;
+}
+
 }} // namespace Slic3r::Geometry

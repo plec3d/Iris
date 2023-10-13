@@ -166,8 +166,10 @@ public:
     const Point&    last_pos() const { return m_last_pos; }
     // Convert coordinates of the active object to G-code coordinates, possibly adjusted for extruder offset.
     Vec2d           point_to_gcode(const Point &point) const;
+    Vec3d           point3_to_gcode(const Point &point) const;
     // Convert coordinates of the active object to G-code coordinates, possibly adjusted for extruder offset and quantized to G-code resolution.
     Vec2d           point_to_gcode_quantized(const Point &point) const;
+    Vec3d           point3_to_gcode_quantized(const Point &point) const;
     Point           gcode_to_point(const Vec2d &point) const;
     const FullPrintConfig &config() const { return m_config; }
     const Layer*    layer() const { return m_layer; }
@@ -326,6 +328,7 @@ private:
 
     std::string     travel_to(const Point &point, ExtrusionRole role, std::string comment);
     bool            needs_retraction(const Polyline &travel, ExtrusionRole role = ExtrusionRole::None);
+    bool            needs_zmove(const Polyline &travel);
     std::string     retract(bool toolchange = false);
     std::string     unretract() { return m_writer.unlift() + m_writer.unretract(); }
     std::string     set_extruder(unsigned int extruder_id, double print_z);

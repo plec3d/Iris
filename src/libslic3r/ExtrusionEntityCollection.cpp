@@ -1,5 +1,7 @@
 #include "ExtrusionEntityCollection.hpp"
 #include "ShortestPath.hpp"
+#include "BoundingBox.hpp"
+#include "SVG.hpp"
 #include <algorithm>
 #include <cmath>
 #include <map>
@@ -150,6 +152,19 @@ double ExtrusionEntityCollection::min_mm3_per_mm() const
     for (const ExtrusionEntity *entity : this->entities)
     	min_mm3_per_mm = std::min(min_mm3_per_mm, entity->min_mm3_per_mm());
     return min_mm3_per_mm;
+}
+
+void ExtrusionEntityCollection::export_to_svg(const char *path) const
+{
+    BoundingBox bbox;
+    for (const ExtrusionEntity *entity : this->entities)
+        bbox.merge(get_extents(entity->as_polylines()));
+
+    SVG svg(path, bbox);
+    for (const ExtrusionEntity *entity : this->entities)
+        svg.draw(entity->as_polylines(), "black", scale_(0.1f));
+
+    svg.Close(); 
 }
 
 }

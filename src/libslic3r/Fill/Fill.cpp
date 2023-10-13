@@ -2,6 +2,8 @@
 #include <stdio.h>
 #include <memory>
 
+#include "SVG.hpp"
+
 #include "../ClipperUtils.hpp"
 #include "../Geometry.hpp"
 #include "../Layer.hpp"
@@ -144,7 +146,7 @@ std::vector<SurfaceFill> group_fills(const Layer &layer)
 		        if (surface.is_solid()) {
 		            params.density = 100.f;
 					//FIXME for non-thick bridges, shall we allow a bottom surface pattern?
-		            params.pattern = (surface.is_external() && ! is_bridge) ? 
+		            params.pattern = (surface.is_external() && ! is_bridge && !surface.is_nonplanar()) ? 
 						(surface.is_top() ? region_config.top_fill_pattern.value : region_config.bottom_fill_pattern.value) :
 		                fill_type_monotonic(region_config.top_fill_pattern) ? ipMonotonic : ipRectilinear;
 		        } else if (params.density <= 0)
@@ -154,7 +156,10 @@ std::vector<SurfaceFill> group_fills(const Layer &layer)
 		            is_bridge ?
 		                ExtrusionRole::BridgeInfill :
 		                (surface.is_solid() ?
-		                    (surface.is_top() ? ExtrusionRole::TopSolidInfill : ExtrusionRole::SolidInfill) :
+		                    (surface.is_top() ? 
+								(surface.is_nonplanar() ? ExtrusionRole::TopSolidInfillNonplanar : ExtrusionRole::TopSolidInfill) : 
+								(surface.is_nonplanar() ? ExtrusionRole::SolidInfillNonplanar : ExtrusionRole::SolidInfill)
+							) :
 							ExtrusionRole::InternalInfill);
 		        params.bridge_angle = float(surface.bridge_angle);
 		        params.angle 		= float(Geometry::deg2rad(region_config.fill_angle.value));
@@ -252,7 +257,7 @@ std::vector<SurfaceFill> group_fills(const Layer &layer)
 			if (! surface_fill.expolygons.empty()) {
     			distance_between_surfaces = std::max(distance_between_surfaces, surface_fill.params.flow.scaled_spacing());
 				append((surface_fill.surface.surface_type == stInternalVoid) ? voids : surfaces_polygons, to_polygons(surface_fill.expolygons));
-				if (surface_fill.surface.surface_type == stInternalSolid)
+				if (surface_fill.surface.is_internal_solid())
 					region_internal_infill = (int)surface_fill.region_id;
 				if (surface_fill.surface.is_solid())
 					region_solid_infill = (int)surface_fill.region_id;
@@ -281,10 +286,10 @@ std::vector<SurfaceFill> group_fills(const Layer &layer)
 				region_id = region_some_infill;
 			const LayerRegion& layerm = *layer.regions()[region_id];
 	        for (SurfaceFill &surface_fill : surface_fills)
-	        	if (surface_fill.surface.surface_type == stInternalSolid && std::abs(layer.height - surface_fill.params.flow.height()) < EPSILON) {
-	        		internal_solid_fill = &surface_fill;
-	        		break;
-	        	}
+				if ((surface_fill.surface.is_internal_solid()) && std::abs(layer.height - surface_fill.params.flow.height()) < EPSILON) {
+					internal_solid_fill = &surface_fill;
+					break;
+				}
 	        if (internal_solid_fill == nullptr) {
 	        	// Produce another solid fill.
 		        params.extruder 	 = layerm.region().extruder(frSolidInfill);
@@ -309,7 +314,7 @@ std::vector<SurfaceFill> group_fills(const Layer &layer)
     // Use ipEnsuring pattern for all internal Solids.
     {
         for (size_t surface_fill_id = 0; surface_fill_id < surface_fills.size(); ++surface_fill_id)
-            if (SurfaceFill &fill = surface_fills[surface_fill_id]; fill.surface.surface_type == stInternalSolid) {
+            if (SurfaceFill &fill = surface_fills[surface_fill_id]; fill.surface.is_internal_solid()) {
                 fill.params.pattern = ipEnsuring;
             }
     }
@@ -449,9 +454,11 @@ void Layer::make_fills(FillAdaptive::Octree* adaptive_fill_octree, FillAdaptive:
 #ifdef SLIC3R_DEBUG_SLICE_PROCESSING
 	{
 		static int iRun = 0;
-		export_group_fills_to_svg(debug_out_path("Layer-fill_surfaces-10_fill-final-%d.svg", iRun ++).c_str(), surface_fills);
+		export_group_fills_to_svg(debug_out_path("Layer-%d-fill_surfaces-10_fill-final-%d.svg", id(), iRun ++).c_str(), surface_fills);
 	}
 #endif /* SLIC3R_DEBUG_SLICE_PROCESSING */
+
+	BOOST_LOG_TRIVIAL(trace) << "make_fills: found " << surface_fills.size() << " surfaces to fill for layer " << id();
 
 	size_t first_object_layer_id = this->object()->get_layer(0)->id();
     for (SurfaceFill &surface_fill : surface_fills) {
@@ -519,6 +526,7 @@ void Layer::make_fills(FillAdaptive::Octree* adaptive_fill_octree, FillAdaptive:
                 else
 				    polylines = f->fill_surface(&surface_fill.surface, params);
 			} catch (InfillFailedException &) {
+				BOOST_LOG_TRIVIAL(trace) << "make_fills: InfillFailedException!";
 			}
             if (!polylines.empty() || !thick_polylines.empty()) {
                 // calculate actual flow from spacing (which might have been adjusted by the infill
@@ -562,7 +570,9 @@ void Layer::make_fills(FillAdaptive::Octree* adaptive_fill_octree, FillAdaptive:
                         flow_mm3_per_mm, float(flow_width), surface_fill.params.flow.height());
                 }
                 insert_fills_into_islands(*this, uint32_t(surface_fill.region_id), fill_begin, uint32_t(layerm.fills().size()));
-		    }
+		    } else {
+				BOOST_LOG_TRIVIAL(trace) << "make_fills: no infill was generated for layer " << id();
+			}
 		}
     }
 
@@ -854,7 +864,7 @@ void Layer::make_ironing()
 						polygons_append(polys, surface.expolygon);
 				} else {
 					for (const Surface &surface : ironing_params.layerm->slices())
-						if (surface.surface_type == stTop || (iron_everything && surface.surface_type == stBottom))
+						if (surface.is_top() || (iron_everything && surface.surface_type == stBottom))
 							// stBottomBridge is not being ironed on purpose, as it would likely destroy the bridges.
 							polygons_append(polys, surface.expolygon);
 				}
@@ -862,7 +872,7 @@ void Layer::make_ironing()
 					// Add solid fill surfaces. This may not be ideal, as one will not iron perimeters touching these
 					// solid fill surfaces, but it is likely better than nothing.
 					for (const Surface &surface : ironing_params.layerm->fill_surfaces())
-						if (surface.surface_type == stInternalSolid)
+						if (surface.is_internal_solid())
 							polygons_append(infills, surface.expolygon);
 				}
 			}

@@ -124,6 +124,7 @@ public:
     ExtrusionEntityCollection flatten(bool preserve_ordering = false) const;
     double min_mm3_per_mm() const override;
     double total_volume() const override { double volume=0.; for (const auto& ent : entities) volume+=ent->total_volume(); return volume; }
+    void   export_to_svg(const char *path) const;
 
     // Following methods shall never be called on an ExtrusionEntityCollection.
     Polyline as_polyline() const override {

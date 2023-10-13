@@ -4,6 +4,7 @@
 #include "ExPolygon.hpp"
 #include "Line.hpp"
 #include "Polygon.hpp"
+#include "SVG.hpp"
 #include <iostream>
 #include <utility>
 
@@ -50,7 +51,9 @@ void Polyline::clip_end(double distance)
         Vec2d  v    = this->last_point().cast<double>() - last_point;
         double lsqr = v.squaredNorm();
         if (lsqr > distance * distance) {
-            this->points.emplace_back((last_point + v * (distance / sqrt(lsqr))).cast<coord_t>());
+            Point p((last_point + v * (distance / sqrt(lsqr))).cast<coord_t>());
+            p.nonplanar_z = this->last_point().nonplanar_z;
+            this->points.emplace_back(p);
             return;
         }
         distance -= sqrt(lsqr);
@@ -101,7 +104,9 @@ Points Polyline::equally_spaced_points(double distance) const
             continue;
         }
         double take = segment_length - (len - distance);  // how much we take of this segment
-        points.emplace_back((p1 + v * (take / v.norm())).cast<coord_t>());
+        Point p((p1 + v * (take / v.norm())).cast<coord_t>());
+        p.nonplanar_z = (*it).nonplanar_z;
+        points.emplace_back(p);
         -- it;
         len = - take;
     }
@@ -246,6 +251,7 @@ std::pair<int, Point> foot_pt(const Points &polyline, const Point &pt)
         if (double d2 = line_alg::distance_to_squared(Line(prev, *it), pt, &foot_pt); d2 < d2_min) {
             d2_min      = d2;
             foot_pt_min = foot_pt;
+            foot_pt_min.nonplanar_z = (*it).nonplanar_z;
             it_proj     = it;
         }
         prev = *it;
@@ -271,6 +277,7 @@ void ThickPolyline::clip_end(double distance)
         assert(this->width.size() == (this->points.size() - 1) * 2);
         while (distance > 0) {
             Vec2d last_point = this->last_point().cast<double>();
+            coord_t last_z = this->last_point().nonplanar_z;
             this->points.pop_back();
             if (this->points.empty()) {
                 assert(this->width.empty());
@@ -284,7 +291,9 @@ void ThickPolyline::clip_end(double distance)
             double   vec_length_sqr = vec.squaredNorm();
             if (vec_length_sqr > distance * distance) {
                 double t = (distance / std::sqrt(vec_length_sqr));
-                this->points.emplace_back((last_point + vec * t).cast<coord_t>());
+                Point p((last_point + vec * t).cast<coord_t>());
+                p.nonplanar_z = last_z;
+                this->points.emplace_back(p);
                 this->width.emplace_back(last_width + width_diff * t);
                 assert(this->width.size() == (this->points.size() - 1) * 2);
                 return;
@@ -331,5 +340,30 @@ Lines3 Polyline3::lines() const
     }
     return lines;
 }
+
+bool export_to_svg(const char *path, const Polyline &polyline, BoundingBox bbox, const float stroke_width)
+{
+    SVG svg(path, bbox);
+    svg.draw(polyline, "black", stroke_width);
+    svg.Close();
+    return true;
+}
+
+bool export_to_svg(const char *path, const Polylines &polylines, BoundingBox bbox, const float stroke_width)
+{
+    SVG svg(path, bbox);
+    svg.draw(polylines, "black", stroke_width);
+    svg.Close();
+    return true;
+}
+
+bool export_to_svg(const char *path, const ThickPolylines &polylines, BoundingBox bbox, const float stroke_width)
+{
+    SVG svg(path, bbox);
+    svg.draw(polylines, "black", stroke_width);
+    svg.Close();
+    return true;
+}
+
 
 }
