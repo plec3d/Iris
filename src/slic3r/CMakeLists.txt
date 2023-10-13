@@ -1,3 +1,12 @@
+#/|/ Copyright (c) Prusa Research 2018 - 2023 Tomáš Mészáros @tamasmeszaros, David Kocík @kocikdav, Lukáš Matěna @lukasmatena, Enrico Turri @enricoturri1966, Vojtěch Bubník @bubnikv, Pavel Mikuš @Godrak, Filip Sykala @Jony01, Oleksandra Iushchenko @YuSanka, Lukáš Hejl @hejllukas, Vojtěch Král @vojtechkral
+#/|/ Copyright (c) 2023 Pedro Lamas @PedroLamas
+#/|/ Copyright (c) 2020 Sergey Kovalev @RandoMan70
+#/|/ Copyright (c) 2021 Boleslaw Ciesielski
+#/|/ Copyright (c) 2019 Spencer Owen @spuder
+#/|/ Copyright (c) 2019 Stephan Reichhelm @stephanr
+#/|/
+#/|/ PrusaSlicer is released under the terms of the AGPLv3 or higher
+#/|/
 cmake_minimum_required(VERSION 3.13)
 project(libslic3r_gui)
 
@@ -8,6 +17,8 @@ set(SLIC3R_GUI_SOURCES
     pchheader.hpp
     GUI/AboutDialog.cpp
     GUI/AboutDialog.hpp
+    GUI/ArrangeSettingsDialogImgui.hpp
+    GUI/ArrangeSettingsDialogImgui.cpp
     GUI/SysInfoDialog.cpp
     GUI/SysInfoDialog.hpp
     GUI/KBShortcutsDialog.cpp
@@ -161,6 +172,8 @@ set(SLIC3R_GUI_SOURCES
     GUI/SendSystemInfoDialog.hpp
     GUI/SurfaceDrag.cpp
     GUI/SurfaceDrag.hpp
+    GUI/TextLines.cpp
+    GUI/TextLines.hpp
     GUI/BonjourDialog.cpp
     GUI/BonjourDialog.hpp
     GUI/ButtonsDescription.cpp
@@ -194,8 +207,8 @@ set(SLIC3R_GUI_SOURCES
     GUI/Jobs/BusyCursorJob.hpp
     GUI/Jobs/CancellableJob.hpp
     GUI/Jobs/PlaterWorker.hpp
-    GUI/Jobs/ArrangeJob.hpp
-    GUI/Jobs/ArrangeJob.cpp
+    GUI/Jobs/ArrangeJob2.hpp
+    GUI/Jobs/ArrangeJob2.cpp
     GUI/Jobs/CreateFontNameImageJob.cpp
     GUI/Jobs/CreateFontNameImageJob.hpp
     GUI/Jobs/CreateFontStyleImagesJob.cpp
@@ -204,8 +217,6 @@ set(SLIC3R_GUI_SOURCES
     GUI/Jobs/EmbossJob.hpp
     GUI/Jobs/RotoptimizeJob.hpp
     GUI/Jobs/RotoptimizeJob.cpp
-    GUI/Jobs/FillBedJob.hpp
-    GUI/Jobs/FillBedJob.cpp
     GUI/Jobs/SLAImportJob.hpp
     GUI/Jobs/SLAImportJob.cpp
     GUI/Jobs/ProgressIndicator.hpp

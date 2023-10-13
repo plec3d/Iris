@@ -1,3 +1,7 @@
+///|/ Copyright (c) Prusa Research 2018 - 2023 Enrico Turri @enricoturri1966, Filip Sykala @Jony01, Vojtěch Bubník @bubnikv, Oleksandra Iushchenko @YuSanka, Lukáš Matěna @lukasmatena, Vojtěch Král @vojtechkral
+///|/
+///|/ PrusaSlicer is released under the terms of the AGPLv3 or higher
+///|/
 #ifndef slic3r_GUI_Preview_hpp_
 #define slic3r_GUI_Preview_hpp_
 
@@ -132,6 +136,7 @@ public:
     void select_view(const std::string& direction);
     void set_drop_target(wxDropTarget* target);
 
+    void load_gcode_shells();
     void load_print(bool keep_z_range = false);
     void reload_print(bool keep_volumes = false);
     void refresh_print();

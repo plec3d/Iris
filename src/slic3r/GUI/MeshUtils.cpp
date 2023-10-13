@@ -1,3 +1,7 @@
+///|/ Copyright (c) Prusa Research 2019 - 2023 Lukáš Matěna @lukasmatena, Oleksandra Iushchenko @YuSanka, Enrico Turri @enricoturri1966, Tomáš Mészáros @tamasmeszaros, Filip Sykala @Jony01, Lukáš Hejl @hejllukas, Vojtěch Bubník @bubnikv
+///|/
+///|/ PrusaSlicer is released under the terms of the AGPLv3 or higher
+///|/
 #include "MeshUtils.hpp"
 
 #include "libslic3r/Tesselate.hpp"
@@ -465,14 +469,17 @@ bool MeshRaycaster::unproject_on_mesh(const Vec2d& mouse_pos, const Transform3d&
 
 
 
-bool MeshRaycaster::is_valid_intersection(Vec3d point, Vec3d direction, const Transform3d& trafo) const 
+bool MeshRaycaster::intersects_line(Vec3d point, Vec3d direction, const Transform3d& trafo) const 
 {
-    point = trafo.inverse() * point;
+    Transform3d trafo_inv = trafo.inverse();
+    Vec3d to = trafo_inv * (point + direction);
+    point = trafo_inv * point;
+    direction = (to-point).normalized();
 
     std::vector<AABBMesh::hit_result> hits      = m_emesh.query_ray_hits(point, direction);
     std::vector<AABBMesh::hit_result> neg_hits  = m_emesh.query_ray_hits(point, -direction);
 
-    return !hits.empty() && !neg_hits.empty();
+    return !hits.empty() || !neg_hits.empty();
 }
 
 

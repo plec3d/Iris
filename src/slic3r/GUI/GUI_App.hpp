@@ -1,3 +1,8 @@
+///|/ Copyright (c) Prusa Research 2018 - 2023 Vojtěch Bubník @bubnikv, Oleksandra Iushchenko @YuSanka, Tomáš Mészáros @tamasmeszaros, David Kocík @kocikdav, Lukáš Matěna @lukasmatena, Enrico Turri @enricoturri1966, Filip Sykala @Jony01, Lukáš Hejl @hejllukas, Vojtěch Král @vojtechkral
+///|/ Copyright (c) 2021 Li Jiang
+///|/
+///|/ PrusaSlicer is released under the terms of the AGPLv3 or higher
+///|/
 #ifndef slic3r_GUI_App_hpp_
 #define slic3r_GUI_App_hpp_
 
@@ -78,11 +83,7 @@ enum FileType
     FT_SIZE,
 };
 
-#if ENABLE_ALTERNATIVE_FILE_WILDCARDS_GENERATOR
-extern wxString file_wildcards(FileType file_type);
-#else
-extern wxString file_wildcards(FileType file_type, const std::string &custom_extension = std::string{});
-#endif // ENABLE_ALTERNATIVE_FILE_WILDCARDS_GENERATOR
+extern wxString file_wildcards(FileType file_type, const std::string &custom_extension = {});
 
 wxString sla_wildcards(const char *formatid);
 
@@ -221,6 +222,8 @@ public:
     const wxColour& get_label_clr_sys()     { return m_color_label_sys; }
     const wxColour& get_label_clr_default() { return m_color_label_default; }
     const wxColour& get_window_default_clr(){ return m_color_window_default; }
+
+    const std::string       get_html_bg_color(wxWindow* html_parent);
 
     const std::string&      get_mode_btn_color(int mode_id);
     std::vector<wxColour>   get_mode_palette();

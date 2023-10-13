@@ -1,3 +1,7 @@
+///|/ Copyright (c) Prusa Research 2023 Oleksandra Iushchenko @YuSanka
+///|/
+///|/ PrusaSlicer is released under the terms of the AGPLv3 or higher
+///|/
 #include "SurfaceDrag.hpp"
 
 #include "libslic3r/Model.hpp" // ModelVolume
@@ -33,7 +37,7 @@ bool on_mouse_surface_drag(const wxMouseEvent         &mouse_event,
     // Fix when click right button
     if (surface_drag.has_value() && !mouse_event.Dragging()) {
         // write transformation from UI into model
-        canvas.do_move(L("Surface move"));
+        canvas.do_move(L("Move over surface"));
 
         // allow moving with object again
         canvas.enable_moving(true);

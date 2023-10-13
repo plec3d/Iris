@@ -1,3 +1,13 @@
+///|/ Copyright (c) Prusa Research 2016 - 2023 Vojtěch Bubník @bubnikv, Pavel Mikuš @Godrak, Lukáš Hejl @hejllukas
+///|/ Copyright (c) Slic3r 2014 - 2015 Alessandro Ranellucci @alranel
+///|/ Copyright (c) 2015 Maksim Derbasov @ntfshard
+///|/
+///|/ ported from lib/Slic3r/Layer.pm:
+///|/ Copyright (c) Prusa Research 2016 - 2022 Vojtěch Bubník @bubnikv
+///|/ Copyright (c) Slic3r 2011 - 2016 Alessandro Ranellucci @alranel
+///|/
+///|/ PrusaSlicer is released under the terms of the AGPLv3 or higher
+///|/
 #include "Layer.hpp"
 #include "ClipperZUtils.hpp"
 #include "ClipperUtils.hpp"
@@ -83,7 +93,8 @@ void Layer::make_slices()
     // Top / bottom surfaces must overlap more than 2um to be chained into a Z graph.
     // Also a larger offset will likely be more robust on non-manifold input polygons.
     static constexpr const float delta = scaled<float>(0.001);
-    co.MiterLimit = scaled<double>(3.);
+    // Don't scale the miter limit, it is a factor, not an absolute length!
+    co.MiterLimit = 3.;
 // Use the default zero edge merging distance. For this kind of safety offset the accuracy of normal direction is not important.
 //    co.ShortestEdgeLength = delta * ClipperOffsetShortestEdgeFactor;
 //    static constexpr const double accept_area_threshold_ccw = sqr(scaled<double>(0.1 * delta));

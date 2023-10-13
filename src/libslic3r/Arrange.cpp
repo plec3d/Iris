@@ -1,3 +1,7 @@
+///|/ Copyright (c) Prusa Research 2018 - 2023 Tomáš Mészáros @tamasmeszaros, Lukáš Matěna @lukasmatena, Vojtěch Bubník @bubnikv, Enrico Turri @enricoturri1966
+///|/
+///|/ PrusaSlicer is released under the terms of the AGPLv3 or higher
+///|/
 #include "Arrange.hpp"
 
 #include "BoundingBox.hpp"
@@ -12,6 +16,7 @@
 #include <ClipperUtils.hpp>
 
 #include <boost/geometry/index/rtree.hpp>
+#include <boost/container/small_vector.hpp>
 
 #if defined(_MSC_VER) && defined(__clang__)
 #define BOOST_NO_CXX17_HDR_STRING_VIEW
@@ -258,7 +263,7 @@ protected:
             auto& index = isBig(item.area()) ? spatindex : smalls_spatindex;
 
             // Query the spatial index for the neighbors
-            std::vector<SpatElement> result;
+            boost::container::small_vector<SpatElement, 100> result;
             result.reserve(index.size());
 
             index.query(query, std::back_inserter(result));

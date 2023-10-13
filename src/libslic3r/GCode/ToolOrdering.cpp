@@ -1,3 +1,8 @@
+///|/ Copyright (c) Prusa Research 2017 - 2023 Lukáš Matěna @lukasmatena, Vojtěch Bubník @bubnikv, Oleksandra Iushchenko @YuSanka, Enrico Turri @enricoturri1966, Tomáš Mészáros @tamasmeszaros
+///|/ Copyright (c) SuperSlicer 2023 Remi Durand @supermerill
+///|/
+///|/ PrusaSlicer is released under the terms of the AGPLv3 or higher
+///|/
 #include "Print.hpp"
 #include "ToolOrdering.hpp"
 #include "Layer.hpp"
@@ -169,6 +174,11 @@ ToolOrdering::ToolOrdering(const Print &print, unsigned int first_extruder, bool
     this->fill_wipe_tower_partitions(print.config(), object_bottom_z, max_layer_height);
 
     if (this->insert_wipe_tower_extruder()) {
+        // Now convert the 0-based list to 1-based again, because that is what reorder_extruder expects.
+        for (LayerTools& lt : m_layer_tools) {
+            for (auto& extruder : lt.extruders)
+                    ++extruder;
+        }
         this->reorder_extruders(first_extruder);
         this->fill_wipe_tower_partitions(print.config(), object_bottom_z, max_layer_height);
     }
@@ -478,12 +488,7 @@ bool ToolOrdering::insert_wipe_tower_extruder()
                 sort_remove_duplicates(lt.extruders);
                 changed = true;
             }
-        }
-        // Now convert the 0-based list to 1-based again.
-        for (LayerTools& lt : m_layer_tools) {
-            for (auto& extruder : lt.extruders)
-                    ++extruder;
-        }
+        }  
     }
     return changed;
 }

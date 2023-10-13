@@ -71,6 +71,11 @@ if (SLIC3R_GUI)
             include(${wxWidgets_USE_FILE})
         endif ()
     endif ()
+    #find_package(wxWidgets 3.2 MODULE REQUIRED COMPONENTS base core adv html gl)
+
+    include(${wxWidgets_USE_FILE})
+
+    slic3r_remap_configs(wx::wxhtml wx::wxadv wx::wxgl wx::wxcore wx::wxbase RelWithDebInfo Release)
 
     if(UNIX)
         message(STATUS "wx-config path: ${wxWidgets_CONFIG_EXECUTABLE}")

@@ -1,3 +1,7 @@
+///|/ Copyright (c) Prusa Research 2020 - 2023 Tomáš Mészáros @tamasmeszaros, Enrico Turri @enricoturri1966, Vojtěch Bubník @bubnikv, David Kocík @kocikdav, Filip Sykala @Jony01, Lukáš Matěna @lukasmatena
+///|/
+///|/ PrusaSlicer is released under the terms of the AGPLv3 or higher
+///|/
 #include "ArrangeJob.hpp"
 
 #include "libslic3r/BuildVolume.hpp"
@@ -403,27 +407,27 @@ arrangement::ArrangePolygon get_arrange_poly(ModelInstance *inst,
 
 arrangement::ArrangeParams get_arrange_params(Plater *p)
 {
-    const GLCanvas3D::ArrangeSettings &settings =
-        p->canvas3D()->get_arrange_settings();
+    const arr2::ArrangeSettingsView *settings =
+        p->canvas3D()->get_arrange_settings_view();
 
     arrangement::ArrangeParams params;
-    params.allow_rotations  = settings.enable_rotation;
-    params.min_obj_distance = scaled(settings.distance);
-    params.min_bed_distance = scaled(settings.distance_from_bed);
+    params.allow_rotations = settings->is_rotation_enabled();
+    params.min_obj_distance = scaled(settings->get_distance_from_objects());
+    params.min_bed_distance = scaled(settings->get_distance_from_bed());
 
     arrangement::Pivots pivot = arrangement::Pivots::Center;
 
     int pivot_max = static_cast<int>(arrangement::Pivots::TopRight);
-    if (settings.alignment < 0) {
+    if (settings->get_xl_alignment() < 0) {
         pivot = arrangement::Pivots::Center;
-    } else if (settings.alignment > pivot_max) {
+    } else if (settings->get_xl_alignment() == arr2::ArrangeSettingsView::xlpRandom) {
         // means it should be random
         std::random_device rd{};
         std::mt19937 rng(rd());
         std::uniform_int_distribution<std::mt19937::result_type> dist(0, pivot_max);
         pivot = static_cast<arrangement::Pivots>(dist(rng));
     } else {
-        pivot = static_cast<arrangement::Pivots>(settings.alignment);
+        pivot = static_cast<arrangement::Pivots>(settings->get_xl_alignment());
     }
 
     params.alignment = pivot;

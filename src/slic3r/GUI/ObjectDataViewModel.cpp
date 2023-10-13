@@ -1,3 +1,8 @@
+///|/ Copyright (c) Prusa Research 2018 - 2023 Oleksandra Iushchenko @YuSanka, Lukáš Matěna @lukasmatena, Vojtěch Bubník @bubnikv, Enrico Turri @enricoturri1966, Lukáš Hejl @hejllukas, David Kocík @kocikdav, Tomáš Mészáros @tamasmeszaros, Vojtěch Král @vojtechkral
+///|/ Copyright (c) 2020 Gianni Ceccarelli @dakkar
+///|/
+///|/ PrusaSlicer is released under the terms of the AGPLv3 or higher
+///|/
 #include "ObjectDataViewModel.hpp"
 #include "wxExtensions.hpp"
 #include "BitmapCache.hpp"
@@ -65,7 +70,7 @@ const std::map<InfoItemType, InfoItemAtributes> INFO_ITEMS{
 //           info_item Type                         info_item Name              info_item BitmapName
             { InfoItemType::CustomSupports,      {L("Paint-on supports"),       "fdm_supports_" },     },
             { InfoItemType::CustomSeam,          {L("Paint-on seam"),           "seam_" },             },
-            { InfoItemType::CutConnectors,       {L("Cut connectors"),          "cut_connectors" },    },
+            { InfoItemType::CutConnectors,       {L("Connectors"),              "cut_connectors" },    },
             { InfoItemType::MmuSegmentation,     {L("Multimaterial painting"),  "mmu_segmentation_"},  },
             { InfoItemType::Sinking,             {L("Sinking"),                 "sinking"},            },
             { InfoItemType::VariableLayerHeight, {L("Variable layer height"),   "layers"},             },

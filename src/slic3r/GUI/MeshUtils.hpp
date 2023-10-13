@@ -1,3 +1,7 @@
+///|/ Copyright (c) Prusa Research 2019 - 2023 Lukáš Matěna @lukasmatena, Oleksandra Iushchenko @YuSanka, Tomáš Mészáros @tamasmeszaros, Enrico Turri @enricoturri1966, Lukáš Hejl @hejllukas, Filip Sykala @Jony01, Vojtěch Bubník @bubnikv
+///|/
+///|/ PrusaSlicer is released under the terms of the AGPLv3 or higher
+///|/
 #ifndef slic3r_MeshUtils_hpp_
 #define slic3r_MeshUtils_hpp_
 
@@ -187,7 +191,9 @@ public:
     
     const AABBMesh &get_aabb_mesh() const { return m_emesh; }
 
-    bool is_valid_intersection(Vec3d point, Vec3d direction, const Transform3d& trafo) const;
+    // Given a point and direction in world coords, returns whether the respective line
+    // intersects the mesh if it is transformed into world by trafo.
+    bool intersects_line(Vec3d point, Vec3d direction, const Transform3d& trafo) const;
 
     // Given a vector of points in woorld coordinates, this returns vector
     // of indices of points that are visible (i.e. not cut by clipping plane

@@ -1,3 +1,7 @@
+///|/ Copyright (c) Prusa Research 2019 - 2023 Tomáš Mészáros @tamasmeszaros, Oleksandra Iushchenko @YuSanka, Pavel Mikuš @Godrak, Lukáš Matěna @lukasmatena, Vojtěch Bubník @bubnikv
+///|/
+///|/ PrusaSlicer is released under the terms of the AGPLv3 or higher
+///|/
 #include <unordered_set>
 
 #include <libslic3r/Exception.hpp>
@@ -125,35 +129,6 @@ void SLAPrint::Steps::apply_printer_corrections(SLAPrintObject &po, SliceOrigin 
         if (idx < slices.size())
             slices[idx] = elephant_foot_compensation(slices[idx], min_w, efc(i));
     }
-}
-
-template<class Cont> bool is_all_positive(const Cont &csgmesh)
-{
-    bool is_all_pos =
-        std::all_of(csgmesh.begin(),
-                    csgmesh.end(),
-                    [](auto &part) {
-                        return csg::get_operation(part) == csg::CSGType::Union;
-                    });
-
-    return is_all_pos;
-}
-
-template<class Cont>
-static indexed_triangle_set csgmesh_merge_positive_parts(const Cont &csgmesh)
-{
-    indexed_triangle_set m;
-    for (auto &csgpart : csgmesh) {
-        auto op = csg::get_operation(csgpart);
-        const indexed_triangle_set * pmesh = csg::get_mesh(csgpart);
-        if (pmesh && op == csg::CSGType::Union) {
-            indexed_triangle_set mcpy = *pmesh;
-            its_transform(mcpy, csg::get_transform(csgpart), true);
-            its_merge(m, mcpy);
-        }
-    }
-
-    return m;
 }
 
 indexed_triangle_set SLAPrint::Steps::generate_preview_vdb(

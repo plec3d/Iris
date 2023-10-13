@@ -1,3 +1,13 @@
+///|/ Copyright (c) Prusa Research 2016 - 2023 Tomáš Mészáros @tamasmeszaros, Vojtěch Bubník @bubnikv, Lukáš Matěna @lukasmatena, Lukáš Hejl @hejllukas, Filip Sykala @Jony01, Oleksandra Iushchenko @YuSanka
+///|/ Copyright (c) Slic3r 2013 - 2016 Alessandro Ranellucci @alranel
+///|/
+///|/ ported from lib/Slic3r/Polygon.pm:
+///|/ Copyright (c) Prusa Research 2017 - 2022 Vojtěch Bubník @bubnikv
+///|/ Copyright (c) Slic3r 2011 - 2014 Alessandro Ranellucci @alranel
+///|/ Copyright (c) 2012 Mark Hindess
+///|/
+///|/ PrusaSlicer is released under the terms of the AGPLv3 or higher
+///|/
 #ifndef slic3r_Polygon_hpp_
 #define slic3r_Polygon_hpp_
 
@@ -267,6 +277,27 @@ bool polygons_match(const Polygon &l, const Polygon &r);
 
 Polygon make_circle(double radius, double error);
 Polygon make_circle_num_segments(double radius, size_t num_segments);
+
+/// <summary>
+/// Define point laying on polygon
+/// keep index of polygon line and point coordinate
+/// </summary>
+struct PolygonPoint
+{
+    // index of line inside of polygon
+    // 0 .. from point polygon[0] to polygon[1]
+    size_t index;
+
+    // Point, which lay on line defined by index
+    Point point;
+};
+using PolygonPoints = std::vector<PolygonPoint>;
+
+// To replace reserve_vector where it's used for Polygons
+template<class I> IntegerOnly<I, Polygons> reserve_polygons(I cap)
+{
+    return reserve_vector<Polygon, I, typename Polygons::allocator_type>(cap);
+}
 
 } // Slic3r
 

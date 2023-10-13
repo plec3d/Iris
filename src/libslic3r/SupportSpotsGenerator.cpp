@@ -1,3 +1,8 @@
+///|/ Copyright (c) Prusa Research 2022 - 2023 Pavel Mikuš @Godrak, Vojtěch Bubník @bubnikv
+///|/ Copyright (c) SuperSlicer 2023 Remi Durand @supermerill
+///|/
+///|/ PrusaSlicer is released under the terms of the AGPLv3 or higher
+///|/
 #include "SupportSpotsGenerator.hpp"
 
 #include "BoundingBox.hpp"
@@ -183,8 +188,11 @@ SliceConnection estimate_slice_connection(size_t slice_idx, const Layer *layer)
     BoundingBox slice_bb = get_extents(slice_polys);
     const Layer        *lower_layer = layer->lower_layer;
 
+    std::unordered_set<size_t> linked_slices_below;
+    for (const auto &link : slice.overlaps_below) { linked_slices_below.insert(link.slice_idx); }
+
     ExPolygons below{};
-    for (const auto &link : slice.overlaps_below) { below.push_back(lower_layer->lslices[link.slice_idx]); }
+    for (const auto &linked_slice_idx_below : linked_slices_below) { below.push_back(lower_layer->lslices[linked_slice_idx_below]); }
     Polygons below_polys = to_polygons(below);
 
     BoundingBox below_bb = get_extents(below_polys);

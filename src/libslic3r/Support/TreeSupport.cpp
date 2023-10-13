@@ -1,3 +1,7 @@
+///|/ Copyright (c) Prusa Research 2022 - 2023 Vojtěch Bubník @bubnikv, Lukáš Matěna @lukasmatena, Tomáš Mészáros @tamasmeszaros
+///|/
+///|/ PrusaSlicer is released under the terms of the AGPLv3 or higher
+///|/
 // Tree supports by Thomas Rahm, losely based on Tree Supports by CuraEngine.
 // Original source of Thomas Rahm's tree supports:
 // https://github.com/ThomasRahm/CuraEngine
@@ -3457,7 +3461,9 @@ static void generate_support_areas(Print &print, const BuildVolume &build_volume
 
         SupportParameters            support_params(print_object);
         support_params.with_sheath = true;
-        support_params.support_density = 0;
+// Don't override the support density of tree supports, as the support density is used for raft.
+// The trees will have the density zeroed in tree_supports_generate_paths()
+//        support_params.support_density = 0;
 
         SupportGeneratorLayerStorage layer_storage;
         SupportGeneratorLayersPtr    top_contacts;

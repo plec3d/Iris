@@ -1,3 +1,25 @@
+///|/ Copyright (c) Prusa Research 2016 - 2023 Lukáš Matěna @lukasmatena, Vojtěch Bubník @bubnikv, Enrico Turri @enricoturri1966, Pavel Mikuš @Godrak, Oleksandra Iushchenko @YuSanka, Lukáš Hejl @hejllukas, Filip Sykala @Jony01, David Kocík @kocikdav
+///|/ Copyright (c) SuperSlicer 2023 Remi Durand @supermerill
+///|/ Copyright (c) 2021 Justin Schuh @jschuh
+///|/ Copyright (c) 2020 Paul Arden @ardenpm
+///|/ Copyright (c) 2020 sckunkle
+///|/ Copyright (c) 2020 Kyle Maas @KyleMaas
+///|/ Copyright (c) 2019 Thomas Moore
+///|/ Copyright (c) 2019 Bryan Smith
+///|/ Copyright (c) Slic3r 2015 - 2016 Alessandro Ranellucci @alranel
+///|/ Copyright (c) 2016 Chow Loong Jin @hyperair
+///|/ Copyright (c) 2015 Maksim Derbasov @ntfshard
+///|/ Copyright (c) 2015 Vicious-one @Vicious-one
+///|/ Copyright (c) 2015 Luís Andrade
+///|/
+///|/ ported from lib/Slic3r/GCode.pm:
+///|/ Copyright (c) Slic3r 2011 - 2015 Alessandro Ranellucci @alranel
+///|/ Copyright (c) 2013 Robert Giseburt
+///|/ Copyright (c) 2012 Mark Hindess
+///|/ Copyright (c) 2012 Henrik Brix Andersen @henrikbrixandersen
+///|/
+///|/ PrusaSlicer is released under the terms of the AGPLv3 or higher
+///|/
 #include "Config.hpp"
 #include "libslic3r.h"
 #include "GCode/ExtrusionProcessor.hpp"
@@ -239,9 +261,13 @@ namespace Slic3r {
 
         const bool needs_toolchange = gcodegen.writer().need_toolchange(new_extruder_id);
         const bool will_go_down = ! is_approx(z, current_z);
-        if (tcr.force_travel || ! needs_toolchange || (gcodegen.config().single_extruder_multi_material && ! tcr.priming)) {
-            // Move over the wipe tower. If this is not single-extruder MM, the first wipe tower move following the
-            // toolchange will travel there anyway (if there is a toolchange).
+        const bool is_ramming = (gcodegen.config().single_extruder_multi_material)
+                             || (! gcodegen.config().single_extruder_multi_material && gcodegen.config().filament_multitool_ramming.get_at(tcr.initial_tool));
+        const bool should_travel_to_tower = ! tcr.priming
+                                         && (tcr.force_travel        // wipe tower says so
+                                             || ! needs_toolchange   // this is just finishing the tower with no toolchange
+                                             || is_ramming);
+        if (should_travel_to_tower) {
             // FIXME: It would be better if the wipe tower set the force_travel flag for all toolchanges,
             // then we could simplify the condition and make it more readable.
             gcode += gcodegen.retract();
@@ -251,6 +277,9 @@ namespace Slic3r {
                 ExtrusionRole::Mixed,
                 "Travel to a Wipe Tower");
             gcode += gcodegen.unretract();
+        } else {
+            // When this is multiextruder printer without any ramming, we can just change
+            // the tool without travelling to the tower.
         }
         
         if (will_go_down) {
@@ -262,7 +291,7 @@ namespace Slic3r {
         std::string toolchange_gcode_str;
         std::string deretraction_str;
         if (tcr.priming || (new_extruder_id >= 0 && needs_toolchange)) {
-            if (gcodegen.config().single_extruder_multi_material)
+            if (is_ramming)
                 gcodegen.m_wipe.reset_path(); // We don't want wiping on the ramming lines.
             toolchange_gcode_str = gcodegen.set_extruder(new_extruder_id, tcr.print_z); // TODO: toolchange_z vs print_z
             if (gcodegen.config().wipe_tower)
@@ -3319,7 +3348,7 @@ std::string GCode::travel_to(const Point &point, ExtrusionRole role, std::string
 
 bool GCode::needs_retraction(const Polyline &travel, ExtrusionRole role)
 {
-    if (travel.length() < scale_(EXTRUDER_CONFIG(retract_before_travel))) {
+    if (! m_writer.extruder() || travel.length() < scale_(EXTRUDER_CONFIG(retract_before_travel))) {
         // skip retraction if the move is shorter than the configured threshold
         return false;
     }

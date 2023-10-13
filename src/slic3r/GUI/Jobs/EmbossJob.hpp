@@ -1,3 +1,7 @@
+///|/ Copyright (c) Prusa Research 2021 - 2022 Oleksandra Iushchenko @YuSanka, Filip Sykala @Jony01
+///|/
+///|/ PrusaSlicer is released under the terms of the AGPLv3 or higher
+///|/
 #ifndef slic3r_EmbossJob_hpp_
 #define slic3r_EmbossJob_hpp_
 
@@ -7,6 +11,7 @@
 #include <libslic3r/Emboss.hpp>
 #include "slic3r/Utils/RaycastManager.hpp"
 #include "slic3r/GUI/Camera.hpp"
+#include "slic3r/GUI/TextLines.hpp"
 #include "Job.hpp"
 
 namespace Slic3r {
@@ -28,9 +33,18 @@ struct DataBase
     // new volume name created from text
     std::string volume_name;
 
+    // Define projection move
+    // True (raised) .. move outside from surface
+    // False (engraved).. move into object
+    bool is_outside;
+
     // flag that job is canceled
     // for time after process.
     std::shared_ptr<std::atomic<bool>> cancel;
+
+    // Define per letter projection on one text line
+    // [optional] It is not used when empty
+    Slic3r::Emboss::TextLines text_lines;
 };
 
 /// <summary>
@@ -153,11 +167,6 @@ struct SurfaceVolumeData
     // Transformation of text volume inside of object
     Transform3d text_tr;
 
-    // Define projection move
-    // True (raised) .. move outside from surface
-    // False (engraved).. move into object
-    bool is_outside;
-
     struct ModelSource
     {
         // source volumes
@@ -215,7 +224,6 @@ SurfaceVolumeData::ModelSources create_sources(const ModelVolumePtrs &volumes, s
 /// <returns>Source data for cut surface from</returns>
 SurfaceVolumeData::ModelSources create_volume_sources(const ModelVolume *text_volume);
 
-
 /// <summary>
 /// Update text volume to use surface from object
 /// </summary>
@@ -230,7 +238,6 @@ public:
     void process(Ctl &ctl) override;
     void finalize(bool canceled, std::exception_ptr &eptr) override;
 };
-
 } // namespace Slic3r::GUI
 
 #endif // slic3r_EmbossJob_hpp_

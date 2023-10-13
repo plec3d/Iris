@@ -1,3 +1,7 @@
+///|/ Copyright (c) Prusa Research 2017 - 2023 Lukáš Matěna @lukasmatena, Vojtěch Bubník @bubnikv
+///|/
+///|/ PrusaSlicer is released under the terms of the AGPLv3 or higher
+///|/
 #ifndef WipeTower_
 #define WipeTower_
 
@@ -14,6 +18,7 @@ namespace Slic3r
 
 class WipeTowerWriter;
 class PrintConfig;
+class PrintRegionConfig;
 enum GCodeFlavor : unsigned char;
 
 
@@ -129,7 +134,10 @@ public:
 	// y			-- y coordinates of wipe tower in mm ( left bottom corner )
 	// width		-- width of wipe tower in mm ( default 60 mm - leave as it is )
 	// wipe_area	-- space available for one toolchange in mm
-    WipeTower(const PrintConfig& config, const std::vector<std::vector<float>>& wiping_matrix, size_t initial_tool);
+    WipeTower(const PrintConfig& config,
+	          const PrintRegionConfig& default_region_config,
+			  const std::vector<std::vector<float>>& wiping_matrix,
+			  size_t initial_tool);
 
 
 	// Set the extruder properties.
@@ -237,6 +245,8 @@ public:
         std::vector<float>  ramming_speed;
         float               nozzle_diameter;
         float               filament_area;
+		bool			    multitool_ramming;
+		float               multitool_ramming_time = 0.f;
     };
 
 private:
@@ -269,6 +279,8 @@ private:
 	size_t m_max_color_changes 	= 0; 	// Maximum number of color changes per layer.
     int    m_old_temperature    = -1;   // To keep track of what was the last temp that we set (so we don't issue the command when not neccessary)
     float  m_travel_speed       = 0.f;
+	float  m_infill_speed       = 0.f;
+	float  m_perimeter_speed    = 0.f;
     float  m_first_layer_speed  = 0.f;
     size_t m_first_layer_idx    = size_t(-1);
 
