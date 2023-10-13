@@ -1,0 +1,31 @@
+#!/bin/sh
+APPIMAGETOOLURL="https://github.com/AppImage/AppImageKit/releases/latest/download/appimagetool-x86_64.AppImage"
+
+
+APP_IMAGE="Iris_ubu64.AppImage"
+
+wget ${APPIMAGETOOLURL} -O ../appimagetool.AppImage
+chmod +x ../appimagetool.AppImage
+
+sed -i -e 's#/root#././#g' ../prusa-slicer
+sed -i -e 's#././#././#g' ../prusa-slicer
+mv ../prusa-slicer AppRun
+chmod +x AppRun
+
+cp resources/icons/Iris_192px.png Iris.png
+mkdir -p usr/share/icons/hicolor/192x192/apps
+cp resources/icons/Iris_192px.png usr/share/icons/hicolor/192x192/apps/Iris.png
+cat <<EOF > Iris.desktop
+[Desktop Entry]
+Name=Iris
+Exec=AppRun %F
+Icon=Iris
+Type=Application
+Categories=Utility;
+MimeType=model/stl;application/vnd.ms-3mfdocument;application/prs.wavefront-obj;application/x-amf;
+EOF
+
+
+../appimagetool.AppImage .
+mv Iris-x86_64.AppImage ${APP_IMAGE}
+chmod +x ${APP_IMAGE}
