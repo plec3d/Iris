@@ -147,23 +147,39 @@ std::vector<SurfaceFill> group_fills(const Layer &layer)
 	        else {
 		        const PrintRegionConfig &region_config = layerm.region().config();
 		        FlowRole extrusion_role = surface.is_top() ? frTopSolidInfill : (surface.is_solid() ? frSolidInfill : frInfill);
-		        bool     is_bridge 	    = layer.id() > 0 && surface.is_bridge();
+		        bool     is_bridge 	    = layer.id() > 0 && layerm.is_bridge;
+				bool     is_overhang 	= layer.id() > 0 && surface.is_bridge();
+				bool     is_pedestal 	= layer.id() > 0 && !surface.pedestal.empty();
 		        params.extruder 	 = layerm.region().extruder(extrusion_role);
-		        params.pattern 		 = region_config.fill_pattern.value;
+		        params.pattern 		 = region_config.fill_pattern.value != ipAlterCentric ? region_config.fill_pattern.value :
+									  ((region_config.bottom_fill_pattern.value == ipConcentric && layer.id() % 2 == 1) || (region_config.bottom_fill_pattern.value != ipConcentric && layer.id() % 2 == 0) ? ipMonotonic : ipConcentric);
 		        params.density       = float(region_config.fill_density);
 
-		        if (surface.is_solid()) {
+				if (is_bridge)
+					params.pattern = region_config.bridge_fill_pattern.value;
+				else if (is_pedestal)
+					params.pattern = region_config.pedestal_fill_pattern.value;
+				else if (is_overhang)
+					params.pattern = region_config.overhang_fill_pattern.value;
+				
+		        else if (surface.is_solid()) {
 		            params.density = 100.f;
 					//FIXME for non-thick bridges, shall we allow a bottom surface pattern?
-		            params.pattern = (surface.is_external() && ! is_bridge && !surface.is_nonplanar()) ? 
-						(surface.is_top() ? region_config.top_fill_pattern.value : region_config.bottom_fill_pattern.value) :
-		                fill_type_monotonic(region_config.top_fill_pattern) ? ipMonotonic : ipRectilinear;
+		            if (surface.is_external())
+                        params.pattern = surface.is_top() ? region_config.top_fill_pattern.value : region_config.bottom_fill_pattern.value;
+					else
+					    params.pattern = region_config.solid_fill_pattern.value;
 		        } else if (params.density <= 0)
 		            continue;
-
+				if (surface.is_bridge())
+		            params.density = 100.f;
 		        params.extrusion_role =
-		            is_bridge ?
-		                ExtrusionRole::BridgeInfill :
+					is_bridge ?
+						ExtrusionRole::BridgeInfill :
+					is_pedestal ? 
+						ExtrusionRole::PedestalInfill :
+					is_overhang ?
+		                ExtrusionRole::OverhangInfill :
 		                (surface.is_solid() ?
 		                    (surface.is_top() ? 
 								(surface.is_nonplanar() ? ExtrusionRole::TopSolidInfillNonplanar : ExtrusionRole::TopSolidInfill) : 
@@ -174,14 +190,14 @@ std::vector<SurfaceFill> group_fills(const Layer &layer)
 		        params.angle 		= float(Geometry::deg2rad(region_config.fill_angle.value));
 		        
 		        // Calculate the actual flow we'll be using for this infill.
-		        params.bridge = is_bridge || Fill::use_bridge_flow(params.pattern);
+		        params.bridge = is_overhang || Fill::use_bridge_flow(params.pattern);
 				params.flow   = params.bridge ?
 					// Always enable thick bridges for internal bridges.
 					layerm.bridging_flow(extrusion_role, surface.is_bridge() && ! surface.is_external()) :
 					layerm.flow(extrusion_role, (surface.thickness == -1) ? layer.height : surface.thickness);
 
 				// Calculate flow spacing for infill pattern generation.
-		        if (surface.is_solid() || is_bridge) {
+		        if (surface.is_solid() || is_overhang) {
 		            params.spacing = params.flow.spacing();
 		            // Don't limit anchor length for solid or bridging infill.
 		            params.anchor_length = 1000.f;
@@ -302,7 +318,7 @@ std::vector<SurfaceFill> group_fills(const Layer &layer)
 	        if (internal_solid_fill == nullptr) {
 	        	// Produce another solid fill.
 		        params.extruder 	 = layerm.region().extruder(frSolidInfill);
-	            params.pattern 		 = fill_type_monotonic(layerm.region().config().top_fill_pattern) ? ipMonotonic : ipRectilinear;
+	            params.pattern 		 = layerm.region().config().solid_fill_pattern.value;
 	            params.density 		 = 100.f;
 		        params.extrusion_role = ExtrusionRole::InternalInfill;
 		        params.angle 		= float(Geometry::deg2rad(layerm.region().config().fill_angle.value));
@@ -641,6 +657,7 @@ Polylines Layer::generate_sparse_infill_polylines_for_anchoring(FillAdaptive::Oc
         case ipCount: continue; break;
         case ipSupportBase: continue; break;
         case ipEnsuring: continue; break;
+		//case ipAlterCentric: continue; break;
         case ipLightning:
 		case ipAdaptiveCubic:
         case ipSupportCubic:
@@ -653,6 +670,8 @@ Polylines Layer::generate_sparse_infill_polylines_for_anchoring(FillAdaptive::Oc
         case ipStars:
         case ipCubic:
         case ipLine:
+		case ipArc:
+		case ipSpiral:
         case ipConcentric:
         case ipHoneycomb:
         case ip3DHoneycomb:

@@ -86,6 +86,10 @@ set(SLIC3R_SOURCES
     Fill/Fill3DHoneycomb.hpp
     Fill/FillAdaptive.cpp
     Fill/FillAdaptive.hpp
+    Fill/FillArc.cpp
+    Fill/FillArc.hpp
+    Fill/FillSpiral.cpp
+    Fill/FillSpiral.hpp
     Fill/FillBase.cpp
     Fill/FillBase.hpp
     Fill/FillConcentric.cpp

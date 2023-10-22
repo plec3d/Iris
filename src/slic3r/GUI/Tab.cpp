@@ -1146,13 +1146,13 @@ void Tab::on_value_change(const std::string& opt_key, const boost::any& value)
 void Tab::update_wiping_button_visibility() {
     if (m_preset_bundle->printers.get_selected_preset().printer_technology() == ptSLA)
         return; // ys_FIXME
-    bool wipe_tower_enabled = dynamic_cast<ConfigOptionBool*>(  (m_preset_bundle->prints.get_edited_preset().config  ).option("wipe_tower"))->value;
+    //bool wipe_tower_enabled = dynamic_cast<ConfigOptionBool*>(  (m_preset_bundle->prints.get_edited_preset().config  ).option("wipe_tower"))->value;
     bool multiple_extruders = dynamic_cast<ConfigOptionFloats*>((m_preset_bundle->printers.get_edited_preset().config).option("nozzle_diameter"))->values.size() > 1;
     bool single_extruder_multi_material = dynamic_cast<ConfigOptionBool*>((m_preset_bundle->printers.get_edited_preset().config).option("single_extruder_multi_material"))->value;
 
     auto wiping_dialog_button = wxGetApp().sidebar().get_wiping_dialog_button();
     if (wiping_dialog_button) {
-        wiping_dialog_button->Show(wipe_tower_enabled && multiple_extruders && single_extruder_multi_material);
+        wiping_dialog_button->Show(/*wipe_tower_enabled &&*/ multiple_extruders && single_extruder_multi_material);
         wiping_dialog_button->GetParent()->Layout();
     }
 }
@@ -1464,11 +1464,13 @@ void TabPrint::build()
         optgroup->append_single_option_line("thin_walls", category_path + "detect-thin-walls");
         optgroup->append_single_option_line("thick_bridges", category_path + "thick_bridges");
         optgroup->append_single_option_line("overhangs", category_path + "detect-bridging-perimeters");
+        optgroup->append_single_option_line("overhangs_threshold", category_path + "detect-bridging-perimeters");
 
         optgroup = page->new_optgroup(L("Advanced"));
         optgroup->append_single_option_line("seam_position", category_path + "seam-position");
         optgroup->append_single_option_line("staggered_inner_seams", category_path + "staggered-inner-seams");
         optgroup->append_single_option_line("external_perimeters_first", category_path + "external-perimeters-first");
+        optgroup->append_single_option_line("first_internal_on_overhangs", category_path + "external-perimeters-first");
         optgroup->append_single_option_line("gap_fill_enabled", category_path + "fill-gaps");
         optgroup->append_single_option_line("perimeter_generator");
 
@@ -1493,6 +1495,11 @@ void TabPrint::build()
         optgroup->append_single_option_line("infill_anchor_max", category_path + "fill-pattern");
         optgroup->append_single_option_line("top_fill_pattern", category_path + "top-fill-pattern");
         optgroup->append_single_option_line("bottom_fill_pattern", category_path + "bottom-fill-pattern");
+        optgroup->append_single_option_line("solid_fill_pattern", category_path + "solid-fill-pattern");
+        optgroup->append_single_option_line("bridge_fill_pattern", category_path + "top-fill-pattern");
+        optgroup->append_single_option_line("overhang_fill_pattern", category_path + "top-fill-pattern");
+        optgroup->append_single_option_line("pedestal_fill_pattern", category_path + "top-fill-pattern");
+
 
         optgroup = page->new_optgroup(L("Ironing"));
         category_path = "ironing_177488#";
@@ -1509,6 +1516,8 @@ void TabPrint::build()
         optgroup = page->new_optgroup(L("Advanced"));
         optgroup->append_single_option_line("solid_infill_every_layers", category_path + "solid-infill-every-x-layers");
         optgroup->append_single_option_line("fill_angle", category_path + "fill-angle");
+        optgroup->append_single_option_line("top_fill_angle");
+        optgroup->append_single_option_line("bottom_fill_angle");
         optgroup->append_single_option_line("solid_infill_below_area", category_path + "solid-infill-threshold-area");
         optgroup->append_single_option_line("bridge_angle");
         optgroup->append_single_option_line("only_retract_when_crossing_perimeters");
@@ -1646,6 +1655,8 @@ void TabPrint::build()
         optgroup->append_single_option_line("wipe_tower_extra_spacing");
         optgroup->append_single_option_line("wipe_tower_no_sparse_layers");
         optgroup->append_single_option_line("single_extruder_multi_material_priming");
+        optgroup->append_single_option_line("wipe_tower_speed");
+        optgroup->append_single_option_line("wipe_tower_wipe_starting_speed");
 
         optgroup = page->new_optgroup(L("Advanced"));
         optgroup->append_single_option_line("interface_shells");
@@ -1668,6 +1679,8 @@ void TabPrint::build()
 
         optgroup = page->new_optgroup(L("Flow"));
         optgroup->append_single_option_line("bridge_flow_ratio");
+        optgroup->append_single_option_line("first_layer_flow_ratio");
+        optgroup->append_single_option_line("top_layer_flow_ratio");
 
         optgroup = page->new_optgroup(L("Slicing"));
         optgroup->append_single_option_line("slice_closing_radius");
@@ -1688,6 +1701,7 @@ void TabPrint::build()
     page = add_options_page(L("Output options"), "output+page_white");
         optgroup = page->new_optgroup(L("Sequential printing"));
         optgroup->append_single_option_line("complete_objects", "sequential-printing_124589");
+        optgroup->append_single_option_line("parallel_objects");
         line = { L("Extruder clearance"), "" };
         line.append_option(optgroup->get_option("extruder_clearance_radius"));
         line.append_option(optgroup->get_option("extruder_clearance_height"));
@@ -3028,9 +3042,45 @@ void TabPrinter::build_extruder_pages(size_t n_before_extruders)
             update();
         };
 
-        optgroup = page->new_optgroup(L("Preview"));
+        //optgroup = page->new_optgroup(L("Preview"));
+        optgroup = page->new_optgroup(L("Mixing extruder"));
+        optgroup->append_single_option_line("mixing_extruder", "", extruder_idx);
+        optgroup->append_single_option_line("nonmixing_extruder", "", extruder_idx);
+        std::vector<unsigned char> mixing_extruder = static_cast<const ConfigOptionBools*>(m_config->option("mixing_extruder"))->values;
+        const bool is_mixing_extruder = (mixing_extruder.at(extruder_idx) != 0) || false;
 
-        auto reset_to_filament_color = [this, extruder_idx](wxWindow*parent) {
+        optgroup->m_on_change = [this, extruder_idx, page, n_before_extruders](const t_config_option_key&opt_key, boost::any value)
+        {
+            //const bool is_mixing_extruder_changed = opt_key.find_first_of("mixing_extruder") != std::string::npos;
+            //if (is_mixing_extruder_changed)
+            //{
+                //mixing_extruder.at(extruder_idx) = !is_mixing_extruder;
+                update_dirty();
+                update();
+                this->build_extruder_pages(n_before_extruders);
+            //}
+
+        };
+        if(is_mixing_extruder){
+            // show the Color options 
+            auto optgroup = page->new_optgroup(L("Colors"));
+            // store the white and the other colrs
+            optgroup->append_single_option_line("multi_extruder_colors", "", extruder_idx);
+            std::vector<int> multi_extruder = static_cast<const ConfigOptionInts*>(m_config->option("multi_extruder_colors"))->values;
+            if(multi_extruder.at(extruder_idx)){
+                const int is_multi_extruder = multi_extruder.at(extruder_idx);
+                if(is_multi_extruder > 0) optgroup->append_single_option_line("multi_extruder_color1", "", extruder_idx);
+                if(is_multi_extruder > 1) optgroup->append_single_option_line("multi_extruder_color2", "", extruder_idx);
+                if(is_multi_extruder > 2) optgroup->append_single_option_line("multi_extruder_color3", "", extruder_idx);
+                if(is_multi_extruder > 3) optgroup->append_single_option_line("multi_extruder_color4", "", extruder_idx);
+            }
+        }else{
+            optgroup = page->new_optgroup(L("Preview"));
+            Line line = optgroup->create_single_option_line("extruder_colour", "", extruder_idx);
+            //line.append_widget(reset_to_filament_color);
+            optgroup->append_line(line);
+        }
+        /*auto reset_to_filament_color = [this, extruder_idx](wxWindow*parent) {
             ScalableButton* btn = new ScalableButton(parent, wxID_ANY, "undo", _L("Reset to Filament Color"),
                                                      wxDefaultSize, wxDefaultPosition, wxBU_LEFT | wxBU_EXACTFIT);
             btn->SetFont(wxGetApp().normal_font());
@@ -3056,10 +3106,11 @@ void TabPrinter::build_extruder_pages(size_t n_before_extruders)
             }, btn->GetId());
 
             return sizer;
-        };
-        Line line = optgroup->create_single_option_line("extruder_colour", "", extruder_idx);
-        line.append_widget(reset_to_filament_color);
-        optgroup->append_line(line);
+        };*/
+        
+        Line line;// = optgroup->create_single_option_line("extruder_colour", "", extruder_idx);
+       //line.append_widget(reset_to_filament_color);
+       //optgroup->append_line(line);
 
         optgroup = page->new_optgroup("");
 

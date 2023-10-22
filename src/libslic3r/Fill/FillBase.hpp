@@ -67,6 +67,9 @@ struct FillParams
     // we were requested to complete each loop;
     // in this case we don't try to make more continuous paths
     bool        complete 		{ false };
+    
+    //full configuration for the region, to avoid copying every bit that is needed. Use this for process-specific parameters.
+    PrintRegionConfig const *config{ nullptr };
 
     // For Concentric infill, to switch between Classic and Arachne.
     bool        use_arachne     { false };
@@ -144,6 +147,7 @@ protected:
         const FillParams                & /* params */,
         unsigned int                      /* thickness_layers */,
         const std::pair<float, Point>   & /* direction */,
+        const Polyline                        & /* pedestal */,
         ExPolygon                         /* expolygon */,
         Polylines                       & /* polylines_out */) {}
 
@@ -151,6 +155,7 @@ protected:
     virtual void _fill_surface_single(const FillParams              &params,
                                       unsigned int                   thickness_layers,
                                       const std::pair<float, Point> &direction,
+                                      const Polyline                &pedestal,
                                       ExPolygon                      expolygon,
                                       ThickPolylines                &thick_polylines_out) {}
 
@@ -159,6 +164,7 @@ protected:
 
 public:
     virtual std::pair<float, Point> _infill_direction(const Surface *surface) const;
+    virtual Polyline _infill_pedestal(const Surface *surface) const;
     static void connect_infill(Polylines &&infill_ordered, const ExPolygon &boundary, Polylines &polylines_out, const double spacing, const FillParams &params);
     static void connect_infill(Polylines &&infill_ordered, const Polygons &boundary, const BoundingBox& bbox, Polylines &polylines_out, const double spacing, const FillParams &params);
     static void connect_infill(Polylines &&infill_ordered, const std::vector<const Polygon*> &boundary, const BoundingBox &bbox, Polylines &polylines_out, double spacing, const FillParams &params);

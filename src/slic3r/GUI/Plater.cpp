@@ -330,6 +330,7 @@ SlicedInfo::SlicedInfo(wxWindow *parent) :
     init_info_label(_L("Used Filament (g)"));
     init_info_label(_L("Used Filament (m)"));
     init_info_label(_L("Used Filament (mm³)"));
+    init_info_label(_L("Purged filament ratio (%)"));
     init_info_label(_L("Used Material (unit)"));
     init_info_label(_L("Cost (money)"));
     init_info_label(_L("Estimated printing time"));
@@ -393,7 +394,7 @@ void FreqChangedParams::sys_color_changed()
 FreqChangedParams::FreqChangedParams(wxWindow* parent) :
     OG_Settings(parent, false)
 {
-    DynamicPrintConfig*	config = &wxGetApp().preset_bundle->prints.get_edited_preset().config;
+        DynamicPrintConfig*	config = &wxGetApp().preset_bundle->prints.get_edited_preset().config;
 
     // Frequently changed parameters for FFF_technology
     m_og->set_config(config);
@@ -425,9 +426,40 @@ FreqChangedParams::FreqChangedParams(wxWindow* parent) :
                     new_val = 0;
                 }
                 new_conf.set_key_value("brim_width", new ConfigOptionFloat(new_val));
+            }else if(opt_key == "support_material_buildplate_only"){ //else if(opt_key == "fill_pattern"){
+                tab_print->update_dirty();
+            tab_print->reload_config();
+            tab_print->update();
+                new_conf.set_key_value("support_material", new ConfigOptionBool(boost::any_cast<bool>(value)));
+                tab_print->load_config(new_conf); 
+                tab_print->update_dirty();
+            }else if(opt_key == "wipe_tower"){
+		tab_print->update_dirty();
+                tab_print->reload_config();
+                tab_print->update();
+                new_conf.set_key_value("wipe_tower", new ConfigOptionBool(boost::any_cast<bool>(value)));
+                tab_print->load_config(new_conf); 
+                tab_print->update_dirty();
+           }else if(opt_key == "support"){
+                const wxString& selection = boost::any_cast<wxString>(value);
+                if(selection == _("None")) new_conf.set_key_value("support_material", new ConfigOptionBool(false));
+		else new_conf.set_key_value("support_material", new ConfigOptionBool(true));
+		if(selection == _("Paint-on only")){
+			new_conf.set_key_value("support_material_auto", new ConfigOptionBool(false));
+			new_conf.set_key_value("overhang_primary_setting", new ConfigOptionEnum<OverhangSetting>(static_cast<OverhangSetting>(osInactive)));
+		}else{
+		new_conf.set_key_value("overhang_primary_setting", new ConfigOptionEnum<SupportMaterialStyle>(static_cast<SupportMaterialStyle>(selection.compare("Organic")?smsOrganic:smsGrid)));
+                new_conf.set_key_value("overhang_primary_setting", new ConfigOptionEnum<OverhangSetting>(static_cast<OverhangSetting>(
+                        selection == _("Organic Low - big corners")?osOrganic1:
+                        selection == _("Organic Med - all corners")?osOrganic2:
+                        selection == _("Organic High - all sides")?osOrganic3:
+                        selection == _("Classic Low - big sides")?osClassic1:
+                        selection == _("Classic Med - all sides")?osClassic2:
+                        selection == _("Classic High - thick")?osClassic3:osInactive
+                )));
+		}
             }
-            else {
-                assert(opt_key == "support");
+             /*else if(opt_key == "support_type"){
                 const wxString& selection = boost::any_cast<wxString>(value);
                 PrinterTechnology printer_technology = wxGetApp().preset_bundle->printers.get_edited_preset().printer_technology();
 
@@ -447,7 +479,7 @@ FreqChangedParams::FreqChangedParams(wxWindow* parent) :
                     new_conf.set_key_value("support_material_buildplate_only", new ConfigOptionBool(false));
                     new_conf.set_key_value("support_material_auto", new ConfigOptionBool(false));
                 }
-            }
+            }*/
             tab_print->load_config(new_conf);
         }
     };
@@ -456,18 +488,46 @@ FreqChangedParams::FreqChangedParams(wxWindow* parent) :
     Line line = Line { "", "" };
 
     ConfigOptionDef support_def;
-    support_def.label = L("Supports");
+    support_def.label = L("Support");
     support_def.type = coStrings;
-    support_def.tooltip = L("Select what kind of support do you need");
-    support_def.set_enum_labels(ConfigOptionDef::GUIType::select_close, {
+    support_def.gui_type = ConfigOptionDef::GUIType::select_open;
+    support_def.tooltip = L("Select what kind of support you need");
+    support_def.set_enum_labels(ConfigOptionDef::GUIType::select_open, {
+        L("None"),
+        L("Organic Low - big corners"),
+        L("Organic Med - all corners"),
+        L("Organic High - all sides"),
+        L("Classic Low - big sides"),
+        L("Classic Med - all sides"),
+        L("Classic High - thick"),
+	L("Paint-on only"),
+	L("System set")});
+    support_def.set_default_value(new ConfigOptionStrings{ "Organic Med - all corners" });
+    Option option = Option(support_def, "support");
+    option.opt.width = 18;
+    line.append_option(option);
+
+/*    ConfigOptionDef support_type;
+    support_type.label = L("Support");
+    support_type.type = coStrings;
+    support_type.tooltip = L("Select what kind of support do you need");
+    support_type.set_enum_labels(ConfigOptionDef::GUIType::select_open, {
         L("None"),
         L("Support on build plate only"),
         L("For support enforcers only"),
         L("Everywhere")
     });
-    support_def.set_default_value(new ConfigOptionStrings{ "None" });
-    Option option = Option(support_def, "support");
-    option.opt.full_width = true;
+    support_type.set_default_value(new ConfigOptionStrings{ "None" });
+    option = Option(support_type, "support_type");
+    option.opt.width = 12;
+    line.append_option(option);
+    */option = m_og->get_option("support_material_buildplate_only");
+    option.opt.label = L("On BP");
+    option.opt.type = coBool;
+    option.opt.tooltip = L("This flag enables supports on buildplate only.");
+    option.opt.gui_type = ConfigOptionDef::GUIType::undefined;
+    option.opt.set_default_value(new ConfigOptionBool(true));
+    option.opt.sidetext = "";
     line.append_option(option);
 
     /* Not a best solution, but
@@ -502,6 +562,15 @@ FreqChangedParams::FreqChangedParams(wxWindow* parent) :
     def.gui_type = ConfigOptionDef::GUIType::undefined;
     def.set_default_value(new ConfigOptionBool{ m_brim_width > 0.0 ? true : false });
     option = Option(def, "brim");
+    option.opt.sidetext = "";
+    line.append_option(option);
+
+    option = m_og->get_option("wipe_tower");
+    option.opt.label = L("Wipe tower");
+    option.opt.type = coBool;
+    option.opt.tooltip = L("This flag enables using a wipe tower.");
+    option.opt.gui_type = ConfigOptionDef::GUIType::undefined;
+    option.opt.set_default_value(new ConfigOptionBool(false));
     option.opt.sidetext = "";
     line.append_option(option);
 
@@ -614,7 +683,7 @@ FreqChangedParams::FreqChangedParams(wxWindow* parent) :
     pad_def.label = L("Pad");
     pad_def.type = coStrings;
     pad_def.tooltip = L("Select what kind of pad do you need");
-    pad_def.set_enum_labels(ConfigOptionDef::GUIType::select_close, {
+    pad_def.set_enum_labels(ConfigOptionDef::GUIType::select_open, {
         L("None"),
         L("Below object"),
         L("Around object")
@@ -1424,6 +1493,13 @@ void Sidebar::update_sliced_info_sizer()
             koef = imperial_units ? pow(ObjectManipulation::mm_to_in, 3) : 1.0f;
             new_label = imperial_units ? _L("Used Filament (in³)") : _L("Used Filament (mm³)");
             info_text = wxString::Format("%.2f", imperial_units ? ps.total_extruded_volume * koef : ps.total_extruded_volume);
+            if(ps.printing_extruders.size()>1){
+                info_text += " (" + wxString::Format("%.2f", ps.individual_extruded_volume[0]);
+                for(int i = 1;i < ps.printing_extruders.size(); i++)
+                    info_text += wxString::Format(" %.2f", imperial_units ? ps.individual_extruded_volume[i] * koef : ps.individual_extruded_volume[i]);
+                info_text += ")";
+            }
+
             p->sliced_info->SetTextAndShow(siFilament_mm3,  info_text,      new_label);
 
             if (ps.total_weight == 0.0)
@@ -1431,10 +1507,16 @@ void Sidebar::update_sliced_info_sizer()
             else {
                 new_label = _L("Used Filament (g)");
                 info_text = wxString::Format("%.2f", ps.total_weight);
+                if(ps.printing_extruders.size()>1){
+                    info_text += " (" + wxString::Format("%.2f", ps.individual_used_filament[0]);
+                    for(int i = 1;i < ps.printing_extruders.size(); i++)
+                        info_text += wxString::Format(" %.2f", ps.individual_used_filament[i]);
+                    info_text += ")";
+                }
 
                 if (ps.filament_stats.size() > 1)
                     new_label += ":";
-
+                float total_purge_volume = 0.;
                 const auto& extruders_filaments = wxGetApp().preset_bundle->extruders_filaments;
                 for (const auto& [filament_id, filament_vol] : ps.filament_stats) {
                     assert(filament_id < extruders_filaments.size());
@@ -1455,8 +1537,11 @@ void Sidebar::update_sliced_info_sizer()
                             new_label += "\n      " + _L("(including spool)");
                             info_text += wxString::Format(" (%.2f)\n", filament_weight + spool_weight);
                         }
+                        total_purge_volume += preset->config.opt_float("extruder_purge_volume", 0);
                     }
                 }
+                new_label = _L("Purged filament ratio (%)");
+                info_text = wxString::Format("%.2f", total_purge_volume/ps.total_extruded_volume * 100.);
 
                 p->sliced_info->SetTextAndShow(siFilament_g, info_text, new_label);
             }
@@ -1471,6 +1556,12 @@ void Sidebar::update_sliced_info_sizer()
                                             (ps.total_cost - ps.total_wipe_tower_cost),
                                             ps.total_wipe_tower_cost) :
                         wxString::Format("%.2f", ps.total_cost);
+            if(ps.printing_extruders.size()>1){
+                info_text += " (" + wxString::Format("%.2f", ps.individual_cost[0]);
+                for(int i = 1;i < ps.printing_extruders.size(); i++)
+                    info_text += wxString::Format(" %.2f", ps.individual_cost[i]);
+                info_text += ")";
+            }
             p->sliced_info->SetTextAndShow(siCost, info_text,      new_label);
 
             if (ps.estimated_normal_print_time == "N/A" && ps.estimated_silent_print_time == "N/A")
@@ -2029,11 +2120,11 @@ Plater::priv::priv(Plater *q, MainFrame *main_frame)
     , main_frame(main_frame)
     , config(Slic3r::DynamicPrintConfig::new_from_defaults_keys({
         "bed_shape", "bed_custom_texture", "bed_custom_model", "complete_objects", "duplicate_distance", "extruder_clearance_radius", "skirts", "skirt_distance",
-        "brim_width", "brim_separation", "brim_type", "variable_layer_height", "nozzle_diameter", "single_extruder_multi_material",
+        "brim_width", "brim_separation", "brim_type", "variable_layer_height", "nozzle_diameter", "single_extruder_multi_material","wipe_tower_speed", "wipe_tower_wipe_starting_speed",
         "wipe_tower", "wipe_tower_x", "wipe_tower_y", "wipe_tower_width", "wipe_tower_rotation_angle", "wipe_tower_brim_width", "wipe_tower_cone_angle", "wipe_tower_extra_spacing", "wipe_tower_extruder",
         "extruder_colour", "filament_colour", "material_colour", "max_print_height", "printer_model", "printer_notes", "printer_technology",
         // These values are necessary to construct SlicingParameters by the Canvas3D variable layer height editor.
-        "layer_height", "first_layer_height", "min_layer_height", "max_layer_height",
+        "layer_height", "first_layer_height", "min_layer_height", "max_layer_height", "parallel_objects",
         "brim_width", "perimeters", "perimeter_extruder", "fill_density", "infill_extruder", "top_solid_layers", 
         "support_material", "support_material_extruder", "support_material_interface_extruder", 
         "support_material_contact_distance", "support_material_bottom_contact_distance", "raft_layers"
@@ -2139,6 +2230,7 @@ Plater::priv::priv(Plater *q, MainFrame *main_frame)
         view3D_canvas->Bind(EVT_GLCANVAS_COLLAPSE_SIDEBAR, [this](SimpleEvent&) { this->q->collapse_sidebar(!this->q->is_sidebar_collapsed());  });
         view3D_canvas->Bind(EVT_GLCANVAS_RESET_LAYER_HEIGHT_PROFILE, [this](SimpleEvent&) { this->view3D->get_canvas3d()->reset_layer_height_profile(); });
         view3D_canvas->Bind(EVT_GLCANVAS_ADAPTIVE_LAYER_HEIGHT_PROFILE, [this](Event<float>& evt) { this->view3D->get_canvas3d()->adaptive_layer_height_profile(evt.data); });
+        view3D_canvas->Bind(EVT_GLCANVAS_SNAP_TO_HORIZONTAL_LAYER_HEIGHT_PROFILE, [this](SimpleEvent&) { this->view3D->get_canvas3d()->snap_to_horizontal_layer_height_profile(); });
         view3D_canvas->Bind(EVT_GLCANVAS_SMOOTH_LAYER_HEIGHT_PROFILE, [this](HeightProfileSmoothEvent& evt) { this->view3D->get_canvas3d()->smooth_layer_height_profile(evt.data); });
         view3D_canvas->Bind(EVT_GLCANVAS_RELOAD_FROM_DISK, [this](SimpleEvent&) { this->reload_all_from_disk(); });
 
@@ -7247,6 +7339,51 @@ std::vector<std::string> Plater::get_colors_for_color_print(const GCodeProcessor
     }
 
     return colors;
+}
+
+void Plater::set_extruder_count(int idx, bool virtualExtruders){
+    DynamicPrintConfig* config = &wxGetApp().preset_bundle->printers.get_edited_preset().config;
+    config->set_num_extruders(idx, virtualExtruders);
+}
+
+void Plater::set_extruder_color(std::string color, int idx){
+    DynamicPrintConfig* config = &wxGetApp().preset_bundle->printers.get_edited_preset().config;
+    config->set_extruder_color(color, idx);
+}
+
+void Plater::add_virtual_extruders(std::vector<std::string> colors, int idx, int num_extruders){
+    DynamicPrintConfig* config = &wxGetApp().preset_bundle->printers.get_edited_preset().config;
+    config->add_virtual_extruders(colors, idx, num_extruders);
+}
+
+bool Plater::store_mixing_color(std::string& color, int extruder_id, int to_delete){
+    DynamicPrintConfig &config = wxGetApp().preset_bundle->printers.get_edited_preset().config;
+    bool finished = config.store_mixing_color(color, extruder_id, to_delete);
+    const std::vector<std::string>& unselected_options = {"multi_extruder_colors"};
+    const std::string& name = wxGetApp().preset_bundle->printers.get_edited_preset().name;
+    wxGetApp().preset_bundle->save_changes_for_preset(name, Slic3r::Preset::TYPE_PRINTER, unselected_options);
+    this->on_config_change(wxGetApp().preset_bundle->full_config());
+    return finished;
+}
+
+int Plater::id_like_this_virtual_extruder(std::string& color, int extruder_id, int num_extruders, bool noNew){
+    DynamicPrintConfig* config = &wxGetApp().preset_bundle->printers.get_edited_preset().config;
+    int id = config->id_like_this_virtual_extruder(color, extruder_id, num_extruders, noNew);
+    wxGetApp().preset_bundle->printers.get_edited_preset().set_num_extruders(num_extruders+1);
+    on_extruders_change(num_extruders+1);
+    wxGetApp().mainframe->update_menubar();
+    TabPrinter* tab_print = static_cast<TabPrinter*>(wxGetApp().get_tab(Preset::TYPE_PRINTER));
+    tab_print->extruders_count_changed(num_extruders+1);
+    tab_print->update_dirty();
+    tab_print->reload_config();
+    tab_print->update();
+    wxGetApp().mainframe->on_config_changed(config);
+    return id;
+}
+
+void Plater::remove_all_virtual_extruders(){
+    DynamicPrintConfig* config = &wxGetApp().preset_bundle->printers.get_edited_preset().config;
+    config->remove_all_virtual_extruders();
 }
 
 wxString Plater::get_project_filename(const wxString& extension) const

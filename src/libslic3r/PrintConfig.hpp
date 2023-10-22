@@ -67,6 +67,10 @@ enum AuthorizationType {
     atKeyPassword, atUserPassword
 };
 
+enum OverhangSetting {
+ osInactive, osOrganic1, osOrganic2, osOrganic3, osClassic1, osClassic2, osClassic3
+};
+
 enum class FuzzySkinType {
     None,
     External,
@@ -74,7 +78,7 @@ enum class FuzzySkinType {
 };
 
 enum InfillPattern : int {
-    ipRectilinear, ipMonotonic, ipMonotonicLines, ipAlignedRectilinear, ipGrid, ipTriangles, ipStars, ipCubic, ipLine, ipConcentric, ipHoneycomb, ip3DHoneycomb,
+    ipArc, ipSpiral, ipRectilinear, ipMonotonic, ipMonotonicLines, ipAlignedRectilinear, ipGrid, ipTriangles, ipStars, ipCubic, ipLine, ipConcentric, ipAlterCentric, ipHoneycomb, ip3DHoneycomb,
     ipGyroid, ipHilbertCurve, ipArchimedeanChords, ipOctagramSpiral, ipAdaptiveCubic, ipSupportCubic, ipSupportBase,
     ipLightning,
     ipEnsuring,
@@ -267,7 +271,12 @@ public:
 
     void                normalize_fdm();
 
-    void                set_num_extruders(unsigned int num_extruders);
+    void                set_num_extruders(unsigned int num_extruders, bool virtualExtruders = false);
+    void                set_extruder_color(std::string color, unsigned int idx);
+    void                add_virtual_extruders(std::vector<std::string> colors, int extruder_id, int num_extruders);
+    int                 id_like_this_virtual_extruder(std::string& color, int extruder_id, int num_extruders, bool noNew = false);
+    bool                store_mixing_color(std::string color, int extruder_id, int to_delete = -1);
+    void                remove_all_virtual_extruders();
 
     // Validate the PrintConfig. Returns an empty string on success, otherwise an error message is returned.
     std::string         validate();
@@ -515,6 +524,14 @@ PRINT_CONFIG_CLASS_DEFINE(
     ((ConfigOptionFloat,               brim_separation))
     ((ConfigOptionEnum<BrimType>,      brim_type))
     ((ConfigOptionFloat,               brim_width))
+    ((ConfigOptionFloat,               overhang_overlap))
+    ((ConfigOptionBool,                 has_nonplanar_layers))
+    ((ConfigOptionEnum<OverhangSetting>, overhang_primary_setting))
+    ((ConfigOptionEnum<OverhangSetting>, overhang_secondary_setting))
+    ((ConfigOptionEnum<OverhangSetting>, overhang_hole_setting))
+    ((ConfigOptionBool,                 use_nonplanar_layers))
+    ((ConfigOptionBool,                ignore_overhang_auto_setting))
+    ((ConfigOptionFloat,               overhang_margin))
     ((ConfigOptionBool,                dont_support_bridges))
     ((ConfigOptionFloat,               elefant_foot_compensation))
     ((ConfigOptionFloatOrPercent,      extrusion_width))
@@ -547,6 +564,10 @@ PRINT_CONFIG_CLASS_DEFINE(
     ((ConfigOptionBool,                support_material))
     // Automatic supports (generated based fdm support point generator).
     ((ConfigOptionBool,                support_material_auto))
+    ((ConfigOptionFloat,               bottom_layer_flow_ratio))
+    ((ConfigOptionFloat,               top_layer_flow_ratio))
+    ((ConfigOptionFloat,                top_fill_angle))
+    ((ConfigOptionFloat,                bottom_fill_angle))
     // Direction of the support pattern (in XY plane).`
     ((ConfigOptionFloat,               support_material_angle))
     ((ConfigOptionBool,                support_material_buildplate_only))
@@ -588,10 +609,6 @@ PRINT_CONFIG_CLASS_DEFINE(
     ((ConfigOptionBool,                thick_bridges))
     ((ConfigOptionFloat,               xy_size_compensation))
     ((ConfigOptionBool,                wipe_into_objects))
-
-    ((ConfigOptionBool,                 use_nonplanar_layers))
-    ((ConfigOptionFloat,                nonplanar_layers_angle))
-    ((ConfigOptionFloat,                nonplanar_layers_height))
 )
 
 PRINT_CONFIG_CLASS_DEFINE(
@@ -602,8 +619,13 @@ PRINT_CONFIG_CLASS_DEFINE(
     ((ConfigOptionFloat,                bottom_solid_min_thickness))
     ((ConfigOptionFloat,                bridge_flow_ratio))
     ((ConfigOptionFloat,                bridge_speed))
+    ((ConfigOptionFloat,                arc_radius))
+    ((ConfigOptionFloat,                arc_infill_raylen))
     ((ConfigOptionEnum<InfillPattern>,  top_fill_pattern))
     ((ConfigOptionEnum<InfillPattern>,  bottom_fill_pattern))
+    ((ConfigOptionEnum<InfillPattern>,  bridge_fill_pattern))
+    ((ConfigOptionEnum<InfillPattern>,  overhang_fill_pattern))
+    ((ConfigOptionEnum<InfillPattern>,  pedestal_fill_pattern))
     ((ConfigOptionFloatOrPercent,       external_perimeter_extrusion_width))
     ((ConfigOptionFloatOrPercent,       external_perimeter_speed))
     ((ConfigOptionBool,                 enable_dynamic_overhang_speeds))
@@ -622,6 +644,8 @@ PRINT_CONFIG_CLASS_DEFINE(
     ((ConfigOptionFloat,                fuzzy_skin_point_dist))
     ((ConfigOptionBool,                 gap_fill_enabled))
     ((ConfigOptionFloat,                gap_fill_speed))
+    ((ConfigOptionBool,                 infill_first))
+    ((ConfigOptionBool,                 first_internal_on_overhangs))
     ((ConfigOptionFloatOrPercent,       infill_anchor))
     ((ConfigOptionFloatOrPercent,       infill_anchor_max))
     ((ConfigOptionInt,                  infill_extruder))
@@ -629,6 +653,9 @@ PRINT_CONFIG_CLASS_DEFINE(
     ((ConfigOptionInt,                  infill_every_layers))
     ((ConfigOptionFloatOrPercent,       infill_overlap))
     ((ConfigOptionFloat,                infill_speed))
+    // Nonplanar settings
+    ((ConfigOptionFloat,                nonplanar_layers_angle))
+    ((ConfigOptionFloat,                nonplanar_layers_height))
     // Ironing options
     ((ConfigOptionBool,                 ironing))
     ((ConfigOptionEnum<IroningType>,    ironing_type))
@@ -637,12 +664,14 @@ PRINT_CONFIG_CLASS_DEFINE(
     ((ConfigOptionFloat,                ironing_speed))
     // Detect bridging perimeters
     ((ConfigOptionBool,                 overhangs))
+    ((ConfigOptionBool,                 overhangs_threshold))
     ((ConfigOptionInt,                  perimeter_extruder))
     ((ConfigOptionFloatOrPercent,       perimeter_extrusion_width))
     ((ConfigOptionFloat,                perimeter_speed))
     // Total number of perimeters.
     ((ConfigOptionInt,                  perimeters))
     ((ConfigOptionFloatOrPercent,       small_perimeter_speed))
+    ((ConfigOptionEnum<InfillPattern>,  solid_fill_pattern))
     ((ConfigOptionFloat,                solid_infill_below_area))
     ((ConfigOptionInt,                  solid_infill_extruder))
     ((ConfigOptionFloatOrPercent,       solid_infill_extrusion_width))
@@ -793,6 +822,7 @@ PRINT_CONFIG_CLASS_DERIVED_DEFINE(
     ((ConfigOptionInts,               overhang_fan_speed_2))
     ((ConfigOptionInts,               overhang_fan_speed_3))
     ((ConfigOptionBool,               complete_objects))
+    ((ConfigOptionBool,               parallel_objects))
     ((ConfigOptionFloats,             colorprint_heights))
     ((ConfigOptionBools,              cooling))
     ((ConfigOptionFloat,              default_acceleration))
@@ -802,7 +832,15 @@ PRINT_CONFIG_CLASS_DERIVED_DEFINE(
     ((ConfigOptionFloat,              external_perimeter_acceleration))
     ((ConfigOptionFloat,              extruder_clearance_height))
     ((ConfigOptionFloat,              extruder_clearance_radius))
+    ((ConfigOptionInts,               virtual_extruder))
+    ((ConfigOptionBools,              mixing_extruder))
+    ((ConfigOptionBools,              nonmixing_extruder))
     ((ConfigOptionStrings,            extruder_colour))
+    ((ConfigOptionInts,               multi_extruder_colors))
+    ((ConfigOptionStrings,            multi_extruder_color1))
+    ((ConfigOptionStrings,            multi_extruder_color2))
+    ((ConfigOptionStrings,            multi_extruder_color3))
+    ((ConfigOptionStrings,            multi_extruder_color4))
     ((ConfigOptionPoints,             extruder_offset))
     ((ConfigOptionBools,              fan_always_on))
     ((ConfigOptionInts,               fan_below_layer_time))
@@ -817,7 +855,7 @@ PRINT_CONFIG_CLASS_DERIVED_DEFINE(
     ((ConfigOptionIntsNullable,       idle_temperature))
     ((ConfigOptionInts,               full_fan_speed_layer))
     ((ConfigOptionFloat,              infill_acceleration))
-    ((ConfigOptionBool,               infill_first))
+    //((ConfigOptionBool,               infill_first))
     ((ConfigOptionInts,               max_fan_speed))
     ((ConfigOptionFloats,             max_layer_height))
     ((ConfigOptionInts,               min_fan_speed))
@@ -853,6 +891,8 @@ PRINT_CONFIG_CLASS_DERIVED_DEFINE(
     ((ConfigOptionFloat,              travel_acceleration))
     ((ConfigOptionBools,              wipe))
     ((ConfigOptionBool,               wipe_tower))
+    ((ConfigOptionFloat,              wipe_tower_speed))
+    ((ConfigOptionFloat,              wipe_tower_wipe_starting_speed))
     ((ConfigOptionFloat,              wipe_tower_x))
     ((ConfigOptionFloat,              wipe_tower_y))
     ((ConfigOptionFloat,              wipe_tower_width))

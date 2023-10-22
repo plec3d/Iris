@@ -36,6 +36,28 @@
 #include <float.h>
 
 namespace Slic3r {
+    
+std::vector<std::string> split(std::string s, std::string delimiter) {
+    size_t pos_start = 0, pos_end, delim_len = delimiter.length();
+    std::string token;
+    std::vector<std::string> res;
+
+    while ((pos_end = s.find(delimiter, pos_start)) != std::string::npos) {
+        token = s.substr (pos_start, pos_end - pos_start);
+        pos_start = pos_end + delim_len;
+        res.push_back (token);
+    }
+
+    res.push_back (s.substr (pos_start));
+    return res;
+}
+
+bool joined_has_val(std::string s, std::string delimiter, std::string filter) {
+    std::vector<std::string> res = split(s, delimiter);
+    if (std::find(res.begin(), res.end(), filter) != res.end())
+        return true;
+    return false;
+}
 
 static t_config_enum_names enum_names_from_keys_map(const t_config_enum_values &enum_keys_map)
 {
@@ -78,6 +100,17 @@ static const t_config_enum_values s_keys_map_GCodeFlavor {
 };
 CONFIG_OPTION_ENUM_DEFINE_STATIC_MAPS(GCodeFlavor)
 
+static const t_config_enum_values s_keys_map_OverhangSetting {
+    { "disabled",    osInactive },
+    { "organic-1",   osOrganic1 },
+    { "organic-2",   osOrganic2 },
+    { "organic-3",   osOrganic3 },
+    { "classic-1",   osClassic1 },
+    { "classic-2",   osClassic2 },
+    { "classic-3",   osClassic3 }
+};
+CONFIG_OPTION_ENUM_DEFINE_STATIC_MAPS(OverhangSetting)
+
 static const t_config_enum_values s_keys_map_MachineLimitsUsage {
     { "emit_to_gcode",      int(MachineLimitsUsage::EmitToGCode) },
     { "time_estimate_only", int(MachineLimitsUsage::TimeEstimateOnly) },
@@ -112,6 +145,8 @@ static const t_config_enum_values s_keys_map_FuzzySkinType {
 CONFIG_OPTION_ENUM_DEFINE_STATIC_MAPS(FuzzySkinType)
 
 static const t_config_enum_values s_keys_map_InfillPattern {
+    { "arc",                ipArc },
+    { "spiral",             ipSpiral },
     { "rectilinear",        ipRectilinear },
     { "monotonic",          ipMonotonic },
     { "monotoniclines",     ipMonotonicLines },
@@ -122,6 +157,7 @@ static const t_config_enum_values s_keys_map_InfillPattern {
     { "cubic",              ipCubic },
     { "line",               ipLine },
     { "concentric",         ipConcentric },
+    { "altercentric",       ipAlterCentric },
     { "honeycomb",          ipHoneycomb },
     { "3dhoneycomb",        ip3DHoneycomb },
     { "gyroid",             ipGyroid },
@@ -539,6 +575,48 @@ void PrintConfigDef::init_fff_params()
     def->mode = comAdvanced;
     def->set_default_value(new ConfigOptionFloat(1));
 
+    def = this->add("first_layer_flow_ratio", coFloat);
+    def->label = L("First layer flow ratio");
+    def->category = L("Advanced");
+    def->tooltip = L("This factor affects the amount of plastic for first layer. "
+                   "You can decrease it slightly (e.g. 0.85) to prevent rough first layer and sticking to the nozzle, "
+                   "or increase a bit to improve sticking to unflat bed (though it's better to have autoleveling or flat bed).");
+    def->min = 0.5;
+    def->max = 1.5;
+    def->mode = comAdvanced;
+    def->set_default_value(new ConfigOptionFloat(1));
+
+    def = this->add("top_fill_angle", coFloat);
+    def->label = L("Top fill angle");
+    def->category = L("Infill");
+    def->tooltip = L("Angle for the top fill orientation. "
+	           "It only affects the top visible layer, but not its adjacent solid shells.");
+    def->sidetext = L("°");
+    def->min = 0;
+    def->max = 360;
+    def->mode = comAdvanced;
+    def->set_default_value(new ConfigOptionFloat(45));
+
+    def = this->add("bottom_fill_angle", coFloat);
+    def->label = L("Bottom fill angle");
+    def->category = L("Infill");
+    def->tooltip = L("Angle for the bottom fill orientation. "
+	           "It only affects the bottom external visible layer, but not its adjacent solid shells.");
+    def->sidetext = L("°");
+    def->min = 0;
+    def->max = 360;
+    def->mode = comAdvanced;
+    def->set_default_value(new ConfigOptionFloat(45));
+
+    def = this->add("top_layer_flow_ratio", coFloat);
+    def->label = L("Top layer flow ratio");
+    def->category = L("Advanced");
+    def->tooltip = L("This factor affects the amount of plastic for top layer. Play with this parameter to get smooth surface.");
+    def->min = 0.5;
+    def->max = 1.5;
+    def->mode = comAdvanced;
+    def->set_default_value(new ConfigOptionFloat(1));
+
     def = this->add("bridge_speed", coFloat);
     def->label = L("Bridges");
     def->category = L("Speed");
@@ -554,7 +632,7 @@ void PrintConfigDef::init_fff_params()
     def->category   = L("Speed");
     def->tooltip    = L("This setting enables dynamic speed control on overhangs.");
     def->mode       = comExpert;
-    def->set_default_value(new ConfigOptionBool(false));
+    def->set_default_value(new ConfigOptionBool(true));
 
     // TRN PrintSettings : "Dynamic overhang speed"
     auto overhang_speed_setting_description = L("Overhang size is expressed as a percentage of overlap of the extrusion with the previous layer: "
@@ -676,7 +754,7 @@ void PrintConfigDef::init_fff_params()
     def->sidetext = L("mm");
     def->min = 0;
     def->mode = comAdvanced;
-    def->set_default_value(new ConfigOptionFloat(0.f));
+    def->set_default_value(new ConfigOptionFloat(0.1));
 
     def = this->add("colorprint_heights", coFloats);
     def->label = L("Colorprint height");
@@ -729,6 +807,14 @@ void PrintConfigDef::init_fff_params()
                    "This feature is useful to avoid the risk of ruined prints. "
                    "Slic3r should warn and prevent you from extruder collisions, but beware.");
     def->mode = comAdvanced;
+    def->set_default_value(new ConfigOptionBool(false));
+
+    def = this->add("parallel_objects", coBool);
+    def->label = L("Print objects by layer range");
+    def->tooltip = L("This feature will complete each object height range before moving to next one (first layers will be still printed one by one. "
+                   "It could prevent stringing and excessive extruder movements. " 
+                   "To prevent collision put nozzle radius (probably with sock) and height of heatblock in the fields below (with margins). "
+				   "This option doesn't work with object instances!");
     def->set_default_value(new ConfigOptionBool(false));
 
     def = this->add("cooling", coBools);
@@ -831,18 +917,20 @@ void PrintConfigDef::init_fff_params()
     def->tooltip = L("Fill pattern for top infill. This only affects the top visible layer, and not its adjacent solid shells.");
     def->cli = "top-fill-pattern|external-fill-pattern|solid-fill-pattern";
     def->set_enum<InfillPattern>({
+        { "arc",                L("Arc") },
+        { "spiral",             L("Spiral") },
         { "rectilinear",        L("Rectilinear") },
         { "monotonic",          L("Monotonic") },
         { "monotoniclines",     L("Monotonic Lines") },
         { "alignedrectilinear", L("Aligned Rectilinear") },
         { "concentric",         L("Concentric") },
+        { "altercentric",       L("AlterCentric")},
         { "hilbertcurve",       L("Hilbert Curve") },
         { "archimedeanchords",  L("Archimedean Chords") },
         { "octagramspiral",     L("Octagram Spiral") }
     });
 
-    // solid_fill_pattern is an obsolete equivalent to top_fill_pattern/bottom_fill_pattern.
-    def->aliases = { "solid_fill_pattern", "external_fill_pattern" };
+    def->aliases = { "external_fill_pattern" };
     def->set_default_value(new ConfigOptionEnum<InfillPattern>(ipMonotonic));
 
     def = this->add("bottom_fill_pattern", coEnum);
@@ -853,6 +941,165 @@ void PrintConfigDef::init_fff_params()
     def->enum_def = Slic3r::clonable_ptr<Slic3r::ConfigOptionEnumDef>(def_top_fill_pattern->enum_def->clone());
     def->aliases = def_top_fill_pattern->aliases;
     def->set_default_value(new ConfigOptionEnum<InfillPattern>(ipMonotonic));
+
+    def = this->add("solid_fill_pattern", coEnum);
+    def->label = L("Solid fill pattern");
+    def->category = L("Infill");
+    def->tooltip = L("Fill pattern for solid (internal) infill. This only affects the solid not-visible layers. You should use rectilinear in most cases. You can try ironing for translucent material.");
+    def->cli = "solid-fill-pattern|external-fill-pattern";
+    def->enum_def = Slic3r::clonable_ptr<Slic3r::ConfigOptionEnumDef>(def_top_fill_pattern->enum_def->clone());
+    def->aliases = def_top_fill_pattern->aliases;
+    def->mode = comExpert;
+    def->set_default_value(new ConfigOptionEnum<InfillPattern>(ipMonotonic));
+
+    def = this->add("bridge_fill_pattern", coEnum);
+    def->label = L("Bridge fill pattern");
+    def->category = L("Infill");
+    def->tooltip = L("Fill pattern for bridge infill. This only affects the bottom external visible layer, and not its adjacent solid shells.");
+    def->cli = "bridge-fill-pattern";
+    def->set_enum<InfillPattern>({
+        { "arc",                L("Arc") },
+        { "rectilinear",        L("Rectilinear") },
+        { "monotonic",          L("Monotonic") },
+        { "monotoniclines",     L("Monotonic Lines") },
+        { "alignedrectilinear", L("Aligned Rectilinear") },
+        { "concentric",         L("Concentric") },
+        { "hilbertcurve",       L("Hilbert Curve") },
+        { "archimedeanchords",  L("Archimedean Chords") },
+        { "octagramspiral",     L("Octagram Spiral") }
+    });
+    def->set_default_value(new ConfigOptionEnum<InfillPattern>(ipMonotonic));
+
+    def = this->add("overhang_fill_pattern", coEnum);
+    def->label = L("Overhang fill pattern");
+    def->category = L("Infill");
+    def->tooltip = L("Fill pattern for overhang infill.");
+    def->cli = "overhang-fill-pattern";
+    def->set_enum<InfillPattern>({
+        { "arc",                L("Arc") },
+        { "spiral",             L("Spiral") },
+        { "rectilinear",        L("Rectilinear") },
+        { "monotonic",          L("Monotonic") },
+        { "monotoniclines",     L("Monotonic Lines") },
+        { "alignedrectilinear", L("Aligned Rectilinear") },
+        { "concentric",         L("Concentric") },
+        { "hilbertcurve",       L("Hilbert Curve") },
+        { "archimedeanchords",  L("Archimedean Chords") },
+        { "octagramspiral",     L("Octagram Spiral") }
+    });
+    def->set_default_value(new ConfigOptionEnum<InfillPattern>(ipArc));
+
+    def = this->add("pedestal_fill_pattern", coEnum);
+    def->label = L("Pedestal fill pattern");
+    def->category = L("Infill");
+    def->tooltip = L("Fill pattern for pedestals. Best set to spiral infill for support-free printing.");
+    def->cli = "pedestal-fill-pattern";
+    def->set_enum<InfillPattern>({
+        { "arc",                L("Arc") },
+        { "spiral",             L("Spiral") },
+        { "rectilinear",        L("Rectilinear") },
+        { "monotonic",          L("Monotonic") },
+        { "monotoniclines",     L("Monotonic Lines") },
+        { "alignedrectilinear", L("Aligned Rectilinear") },
+        { "concentric",         L("Concentric") },
+        { "hilbertcurve",       L("Hilbert Curve") },
+        { "archimedeanchords",  L("Archimedean Chords") },
+        { "octagramspiral",     L("Octagram Spiral") }
+    });
+    def->set_default_value(new ConfigOptionEnum<InfillPattern>(ipSpiral));
+
+    def = this->add("arc_radius", coFloat);
+    def->category = L("Advanced");
+    def->tooltip = L("");
+    def->label = L("Radius of the outer arc");
+    def->min = 0;
+    def->sidetext = L("");
+    def->mode = comAdvanced;
+    def->set_default_value(new ConfigOptionFloat(1.55));
+
+    def = this->add("arc_infill_raylen", coFloat);
+    def->category = L("Advanced");
+    def->tooltip = L("");
+    def->label = L("Length of the ray used for edge intersection");
+    def->min = 0;
+    def->sidetext = L("");
+    def->mode = comAdvanced;
+    def->set_default_value(new ConfigOptionFloat(12.));
+
+    def = this->add("overhang_margin", coFloat);
+    def->label = L("Overhang margin");
+    def->category = L("Support material");
+    def->tooltip = L("Given as % of a single perimeter width and taken from outside in," 
+            "50% is halfway on most outer perimeter.");
+    def->sidetext = L("%");
+    def->min = 0;
+    def->mode = comAdvanced;
+    def->set_default_value(new ConfigOptionFloat(0.));
+
+    def = this->add("overhang_overlap", coFloat);
+    def->label = L("Overhang infill overlap");
+    def->category = L("Support material");
+    def->tooltip = L("Usually best left untouched.");
+    def->sidetext = L("mm");
+    def->min = 0;
+    def->mode = comAdvanced;
+    def->set_default_value(new ConfigOptionFloat(0.9));
+
+
+    def = this->add("ignore_overhang_auto_setting", coBool);
+    def->label = L("Ignore auto overhang setting");
+    def->category = L("Support material");
+    def->tooltip = L("");
+    def->mode = comExpert;
+    def->set_default_value(new ConfigOptionBool(false));
+
+    def = this->add("overhang_primary_setting", coEnum);
+    def->label = L("Main overhang setting");
+    def->tooltip = L("Custom values are ignored when using these presets.");
+    //def->mode = comExpert;
+    def->category = L("Support material");
+    def->set_enum<OverhangSetting>({
+        { "disabled",         L("No overhang support") },
+        { "organic-1",       L("Organic Low - big corners") },
+    { "organic-2",       L("Organic Med - all corners") },
+    { "organic-3",       L("Organic High - all sides") },
+    { "classic-1",       L("Classic Low - big sides") },
+    { "classic-2",       L("Classic Med - all sides") },
+    { "classic-3",       L("Classic High - thick") }
+    });
+    def->set_default_value(new ConfigOptionEnum<OverhangSetting>(osOrganic1));
+
+    def = this->add("overhang_secondary_setting", coEnum);
+    def->label = L("Fallback overhang setting");
+    def->tooltip = L("Is used when the main preset doesn't give an object any support.");
+    //def->mode = comExpert;
+    def->category = L("Support material");
+    def->set_enum<OverhangSetting>({
+        { "disabled",         L("Disabled") },
+        { "organic-1",       L("Organic Low - big corners") },
+        { "organic-2",       L("Organic Med - all corners") },
+        { "organic-3",       L("Organic High - all sides") },
+        { "classic-1",       L("Classic Low - big sides") },
+        { "classic-2",       L("Classic Med - all sides") },
+        { "classic-3",       L("Classic High - thick") }
+    });
+    def->set_default_value(new ConfigOptionEnum<OverhangSetting>(osClassic2));
+
+    def = this->add("overhang_hole_setting", coEnum);
+    def->label = L("Holed overhang setting");
+    def->tooltip = L("When there are holes in overhangs it can be better to support the holes, as they weaken arc infill.");
+    //def->mode = comExpert;
+    def->category = L("Support material");
+    def->set_enum<OverhangSetting>({
+        { "disabled",         L("Disabled") },
+        { "organic-1",       L("Organic Low - big corners") },
+        { "organic-2",       L("Organic Med - all corners") },
+        { "organic-3",       L("Organic High - all sides") },
+        { "classic-1",       L("Classic Low - big sides") },
+        { "classic-2",       L("Classic Med - all sides") },
+        { "classic-3",       L("Classic High - thick") }
+    });
+    def->set_default_value(new ConfigOptionEnum<OverhangSetting>(osOrganic2));
 
     def = this->add("external_perimeter_extrusion_width", coFloatOrPercent);
     def->label = L("External perimeters");
@@ -940,6 +1187,65 @@ void PrintConfigDef::init_fff_params()
     def->gui_type = ConfigOptionDef::GUIType::color;
     // Empty string means no color assigned yet.
     def->set_default_value(new ConfigOptionStrings { "" });
+
+        def = this->add("multi_extruder_colors", coInts);
+        def->label = L("Multi extruder color count");
+        def->min = 0;
+        def->max = 4;
+        def->tooltip = L("Set the amount of colors your multi-extruder uses");
+        //def->gui_type = ConfigOptionDef::GUIType::color;
+        // Empty string means no color assigned yet.
+        def->set_default_value(new ConfigOptionInts{0});
+
+        def = this->add("multi_extruder_color1", coStrings);
+        def->label = L("Multi extruder color");
+        def->tooltip = L("This is only used in the Slic3r interface as a visual help.");
+        def->gui_type = ConfigOptionDef::GUIType::color;
+        // Empty string means no color assigned yet.
+        def->set_default_value(new ConfigOptionStrings { "" });
+
+        def = this->add("multi_extruder_color2", coStrings);
+        def->label = L("Multi extruder color");
+        def->tooltip = L("This is only used in the Slic3r interface as a visual help.");
+        def->gui_type = ConfigOptionDef::GUIType::color;
+        // Empty string means no color assigned yet.
+        def->set_default_value(new ConfigOptionStrings { "" });
+
+        def = this->add("multi_extruder_color3", coStrings);
+        def->label = L("Multi extruder color");
+        def->tooltip = L("This is only used in the Slic3r interface as a visual help.");
+        def->gui_type = ConfigOptionDef::GUIType::color;
+        // Empty string means no color assigned yet.
+        def->set_default_value(new ConfigOptionStrings { "" });
+
+        def = this->add("multi_extruder_color4", coStrings);
+        def->label = L("Multi extruder color");
+        def->tooltip = L("This is only used in the Slic3r interface as a visual help.");
+        def->gui_type = ConfigOptionDef::GUIType::color;
+        // Empty string means no color assigned yet.
+        def->set_default_value(new ConfigOptionStrings { "" });
+
+        def = this->add("stored_mixing_colors", coStrings);
+        def->label = L("Mixing extruder colors stored");
+        def->tooltip = L("This is only used in the Slic3r interface as a visual help.");
+        //def->gui_type = ConfigOptionDef::GUIType::color;
+        // Empty string means no color assigned yet.
+        def->set_default_value(new ConfigOptionStrings { "" });
+
+        def = this->add("virtual_extruder", coInts);
+        def->label = L("For internal use only");
+        def->tooltip = L("This flag sets this extruder up as a unstored virtual extruder for use with mixing extruders.");
+        def->set_default_value(new ConfigOptionInts {-1});
+
+        def = this->add("mixing_extruder", coBools);
+        def->label = L("Enable color mixing extruder");
+        def->tooltip = L("This flag sets this extruder up as a mixing extruder. Please try to calibrate to the precise colors.");
+        def->set_default_value(new ConfigOptionBools {false});
+
+        def = this->add("nonmixing_extruder", coBools);
+        def->label = L("Enable non-mixing extruder");
+        def->tooltip = L("This flag sets this extruder up as a mixing extruder. Please try to calibrate to the precise colors.");
+        def->set_default_value(new ConfigOptionBools {false});
 
     def = this->add("extruder_offset", coPoints);
     def->label = L("Extruder offset");
@@ -1414,6 +1720,12 @@ void PrintConfigDef::init_fff_params()
     def->mode = comAdvanced;
     def->set_default_value(new ConfigOptionFloat(0.8));
 
+    def = this->add("has_nonplanar_layers", coBool);
+    def->label = L("Uses nonplanar layers");
+    def->category = L("Nonplanar layers");
+    def->tooltip = L("Only used internally");
+    def->mode = comAdvanced;
+    def->set_default_value(new ConfigOptionBool(false));
 
     def = this->add("use_nonplanar_layers", coBool);
     def->label = L("Use nonplanar layers");
@@ -1627,9 +1939,18 @@ void PrintConfigDef::init_fff_params()
 
     def = this->add("infill_first", coBool);
     def->label = L("Infill before perimeters");
+    def->category = L("Infill");
     def->tooltip = L("This option will switch the print order of perimeters and infill, making the latter first.");
     def->mode = comExpert;
     def->set_default_value(new ConfigOptionBool(false));
+
+    def = this->add("first_internal_on_overhangs", coBool);
+    def->label = L("Internal perimeters first on overhangs");
+    def->category = L("Layers and Perimeters");
+    def->tooltip = L("Print contour perimeters from the innermost to the outermost one for layers with overhengs. "
+                   "It overrides \"External perimeters first\" option.");
+    def->mode = comExpert;
+    def->set_default_value(new ConfigOptionBool(true));
 
     // def = this->add("infill_only_where_needed", coBool);
     // def->label = L("Only infill where needed");
@@ -2076,6 +2397,13 @@ void PrintConfigDef::init_fff_params()
     def->category = L("Layers and Perimeters");
     def->tooltip = L("Experimental option to adjust flow for overhangs (bridge flow will be used), "
                    "to apply bridge speed to them and enable fan.");
+    def->mode = comAdvanced;
+    def->set_default_value(new ConfigOptionBool(true));
+
+    def = this->add("overhangs_threshold", coBool);
+    def->label = L("Increase overhangs detection sensitivity");
+    def->category = L("Layers and Perimeters");
+    def->tooltip = L("Detect less steep overhangs also.");
     def->mode = comAdvanced;
     def->set_default_value(new ConfigOptionBool(true));
 
@@ -2964,55 +3292,47 @@ void PrintConfigDef::init_fff_params()
     def = this->add("support_tree_angle", coFloat);
     def->label = L("Maximum Branch Angle");
     def->category = L("Support material");
-    // TRN PrintSettings: "Organic supports" > "Maximum Branch Angle"
     def->tooltip = L("The maximum angle of the branches, when the branches have to avoid the model. "
                      "Use a lower angle to make them more vertical and more stable. Use a higher angle to be able to have more reach.");
     def->sidetext = L("°");
     def->min = 0;
     def->max = 85;
     def->mode = comAdvanced;
-    def->set_default_value(new ConfigOptionFloat(40));
+    def->set_default_value(new ConfigOptionFloat(55));
 
     def = this->add("support_tree_angle_slow", coFloat);
     def->label = L("Preferred Branch Angle");
     def->category = L("Support material");
-    // TRN PrintSettings: "Organic supports" > "Preferred Branch Angle"
     def->tooltip = L("The preferred angle of the branches, when they do not have to avoid the model. "
                      "Use a lower angle to make them more vertical and more stable. Use a higher angle for branches to merge faster.");
     def->sidetext = L("°");
     def->min = 10;
     def->max = 85;
     def->mode = comAdvanced;
-    def->set_default_value(new ConfigOptionFloat(25));
+    def->set_default_value(new ConfigOptionFloat(35));
 
     def = this->add("support_tree_tip_diameter", coFloat);
     def->label = L("Tip Diameter");
     def->category = L("Support material");
-    // TRN PrintSettings: "Organic supports" > "Tip Diameter"
-    def->tooltip = L("Branch tip diameter for organic supports.");
+    def->tooltip = L("The diameter of the top of the tip of the branches of organic support.");
     def->sidetext = L("mm");
-    def->min = 0.1f;
-    def->max = 100.f;
+    def->min = 0;
     def->mode = comAdvanced;
     def->set_default_value(new ConfigOptionFloat(0.8));
 
     def = this->add("support_tree_branch_diameter", coFloat);
     def->label = L("Branch Diameter");
     def->category = L("Support material");
-    // TRN PrintSettings: "Organic supports" > "Branch Diameter"
     def->tooltip = L("The diameter of the thinnest branches of organic support. Thicker branches are more sturdy. "
                      "Branches towards the base will be thicker than this.");
     def->sidetext = L("mm");
-    def->min = 0.1f;
-    def->max = 100.f;
+    def->min = 0;
     def->mode = comAdvanced;
-    def->set_default_value(new ConfigOptionFloat(2));
+    def->set_default_value(new ConfigOptionFloat(1.5));
 
     def = this->add("support_tree_branch_diameter_angle", coFloat);
-    // TRN PrintSettings: #lmFIXME 
     def->label = L("Branch Diameter Angle");
     def->category = L("Support material");
-    // TRN PrintSettings: "Organic supports" > "Branch Diameter Angle"
     def->tooltip = L("The angle of the branches' diameter as they gradually become thicker towards the bottom. "
                      "An angle of 0 will cause the branches to have uniform thickness over their length. "
                      "A bit of an angle can increase stability of the organic support.");
@@ -3020,7 +3340,19 @@ void PrintConfigDef::init_fff_params()
     def->min = 0;
     def->max = 15;
     def->mode = comAdvanced;
-    def->set_default_value(new ConfigOptionFloat(5));
+    def->set_default_value(new ConfigOptionFloat(1));
+
+    def = this->add("support_tree_top_rate", coPercent);
+    def->label = L("Branch Density");
+    def->category = L("Support material");
+    def->tooltip = L("Adjusts the density of the support structure used to generate the tips of the branches. "
+                     "A higher value results in better overhangs, but the supports are harder to remove. "
+                     "Use Support Roof for very high values or ensure support density is similarly high at the top.");
+    def->sidetext = L("%");
+    def->min = 5;
+    def->max_literal = 35;
+    def->mode = comAdvanced;
+    def->set_default_value(new ConfigOptionPercent(5));
 
     def = this->add("support_tree_branch_diameter_double_wall", coFloat);
     def->label = L("Branch Diameter with double walls");
@@ -3048,20 +3380,6 @@ void PrintConfigDef::init_fff_params()
     def->mode = comAdvanced;
     def->set_default_value(new ConfigOptionFloat(1.));
 
-    def = this->add("support_tree_top_rate", coPercent);
-    def->label = L("Branch Density");
-    def->category = L("Support material");
-    // TRN PrintSettings: "Organic supports" > "Branch Density"
-    def->tooltip = L("Adjusts the density of the support structure used to generate the tips of the branches. "
-                     "A higher value results in better overhangs but the supports are harder to remove, "
-                     "thus it is recommended to enable top support interfaces instead of a high branch density value "
-                     "if dense interfaces are needed.");
-    def->sidetext = L("%");
-    def->min = 5;
-    def->max_literal = 35;
-    def->mode = comAdvanced;
-    def->set_default_value(new ConfigOptionPercent(15));
-
     def = this->add("temperature", coInts);
     def->label = L("Other layers");
     def->tooltip = L("Nozzle temperature for layers after the first one. Set this to zero to disable "
@@ -3078,7 +3396,7 @@ void PrintConfigDef::init_fff_params()
     def->tooltip = L("If enabled, bridges are more reliable, can bridge longer distances, but may look worse. "
                      "If disabled, bridges look better but are reliable just for shorter bridged distances.");
     def->mode = comAdvanced;
-    def->set_default_value(new ConfigOptionBool(true));
+    def->set_default_value(new ConfigOptionBool(false));
 
     def = this->add("thin_walls", coBool);
     def->label = L("Detect thin walls");
@@ -3103,7 +3421,9 @@ void PrintConfigDef::init_fff_params()
     def = this->add("toolchange_gcode", coString);
     def->label = L("Tool change G-code");
     def->tooltip = L("This custom code is inserted before every toolchange. Placeholder variables for all PrusaSlicer settings "
-                     "as well as {toolchange_z}, {previous_extruder} and {next_extruder} can be used. When a tool-changing command "
+                     "as well as {toolchange_z}, {previous_extruder} and {next_extruder} can be used. If the wipe tower is disabled,"
+                     "{extruder_purge_volume} is also available and provides the volume to purged, "
+                     "accounting for any infill/object wiping settings. When a tool-changing command "
                      "which changes to the correct extruder is included (such as T{next_extruder}), PrusaSlicer will emit no other such command. "
                      "It is therefore possible to script custom behaviour both before and after the toolchange.");
     def->multiline = true;
@@ -3223,6 +3543,20 @@ void PrintConfigDef::init_fff_params()
     def->mode = comAdvanced;
     def->set_default_value(new ConfigOptionBool(false));
 
+    def = this->add("wipe_tower_speed", coFloat);
+    def->label = L("Speed");
+    def->tooltip = L("Printing speed of the wipe tower. Capped by filament_max_volumetric_speed (if set).");
+    def->sidetext = L("mm/s");
+    def->mode = comAdvanced;
+    def->set_default_value(new ConfigOptionFloat(80.));
+
+    def = this->add("wipe_tower_wipe_starting_speed", coFloat);
+    def->label = L("Wipe starting speed");
+    def->tooltip = L("Start of the wiping speed ramp up. Set to 0 to disable.");
+    def->sidetext = L("mm/s");
+    def->mode = comAdvanced;
+    def->set_default_value(new ConfigOptionFloat(26.));
+
     def = this->add("wiping_volumes_extruders", coFloats);
     def->label = L("Purging volumes - load/unload volumes");
     def->tooltip = L("This vector saves required volumes to change from/to each tool used on the "
@@ -3301,7 +3635,7 @@ void PrintConfigDef::init_fff_params()
     def->tooltip = L("Purging after toolchange will be done inside this object's infills. "
                      "This lowers the amount of waste but may result in longer print time "
                      " due to additional travel moves.");
-    def->set_default_value(new ConfigOptionBool(false));
+    def->set_default_value(new ConfigOptionBool(true));
 
     def = this->add("wipe_into_objects", coBool);
     def->category = L("Wipe options");
@@ -3383,7 +3717,7 @@ void PrintConfigDef::init_fff_params()
     def->mode = comExpert;
     def->min = 0;
     def->set_default_value(new ConfigOptionFloatOrPercent(100, true));
-
+    
     def = this->add("wall_transition_filter_deviation", coFloatOrPercent);
     def->label = L("Perimeter transitioning filter margin");
     def->category = L("Advanced");
@@ -3478,8 +3812,8 @@ void PrintConfigDef::init_extruder_option_keys()
         "nozzle_diameter", "min_layer_height", "max_layer_height", "extruder_offset",
         "retract_length", "retract_lift", "retract_lift_above", "retract_lift_below", "retract_speed", "deretract_speed",
         "retract_before_wipe", "retract_restart_extra", "retract_before_travel", "wipe",
-        "retract_layer_change", "retract_length_toolchange", "retract_restart_extra_toolchange", "extruder_colour",
-        "default_filament_profile"
+         "retract_layer_change", "retract_length_toolchange", "retract_restart_extra_toolchange", "extruder_colour","multi_extruder_colors","multi_extruder_color1","multi_extruder_color2","multi_extruder_color3","multi_extruder_color4","virtual_extruder","mixing_extruder",
+        "default_filament_profile", "stored_mixing_colors","nonmixing_extruder"
     };
 
     m_extruder_retract_keys = {
@@ -4463,7 +4797,7 @@ void DynamicPrintConfig::normalize_fdm()
             opt_n->values.assign(opt_n->values.size(), false);  // Set all values to false.
         }
         {
-            this->opt<ConfigOptionInt>("perimeters", true)->value       = 1;
+            //this->opt<ConfigOptionInt>("perimeters", true)->value       = 1;
             this->opt<ConfigOptionInt>("top_solid_layers", true)->value = 0;
             this->opt<ConfigOptionPercent>("fill_density", true)->value = 0;
         }
@@ -4501,11 +4835,11 @@ void  handle_legacy_sla(DynamicPrintConfig &config)
     }
 }
 
-void DynamicPrintConfig::set_num_extruders(unsigned int num_extruders)
+void DynamicPrintConfig::set_num_extruders(unsigned int num_extruders, bool virtualExtruders)
 {
     const auto &defaults = FullPrintConfig::defaults();
     for (const std::string &key : print_config_def.extruder_option_keys()) {
-        if (key == "default_filament_profile")
+        if (key == "default_filament_profile" || (virtualExtruders && key == "nozzle_diameter"))
             // Don't resize this field, as it is presented to the user at the "Dependencies" page of the Printer profile and we don't want to present
             // empty fields there, if not defined by the system profile.
             continue;
@@ -4514,6 +4848,142 @@ void DynamicPrintConfig::set_num_extruders(unsigned int num_extruders)
         assert(opt->is_vector());
         if (opt != nullptr && opt->is_vector())
             static_cast<ConfigOptionVectorBase*>(opt)->resize(num_extruders, defaults.option(key));
+    }
+}
+
+void DynamicPrintConfig::add_virtual_extruders(std::vector<std::string> colors, int extruder_id, int num_extruders)
+{
+    const auto &defaults = FullPrintConfig::defaults();
+    set_num_extruders(num_extruders+colors.size());
+    // resize the amount of extruders and set the colour to the right colour
+    for (const std::string &key : print_config_def.extruder_option_keys()){
+        if (key == "default_filament_profile")// || virtualExtruders && key == "nozzle_diameter")
+            // Don't resize this field, as it is presented to the user at the "Dependencies" page of the Printer profile and we don't want to present
+            // empty fields there, if not defined by the system profile.
+            continue;
+        auto *opt = this->option(key, false);
+        assert(opt != nullptr);
+        assert(opt->is_vector());
+        if (opt != nullptr && opt->is_vector()){
+            //static_cast<ConfigOptionVectorBase*>(opt)->resize(num_extruders + colors.size(), defaults.option(key));
+            int idx = num_extruders;
+            if (key == "extruder_colour")
+                for(std::string color: colors){
+                    static_cast<ConfigOptionVectorBase*>(opt)->set_at(new ConfigOptionString(color), idx, idx);
+                    idx++;
+                }
+            idx = num_extruders;
+            if (key == "virtual_extruder")
+                for(std::string color: colors){
+                    static_cast<ConfigOptionVectorBase*>(opt)->set_at(new ConfigOptionInt(extruder_id), idx, idx);
+                    idx++;
+                }
+            idx = num_extruders;
+            if (key == "mixing_extruder")
+                for(std::string color: colors){
+                    static_cast<ConfigOptionVectorBase*>(opt)->set_at(new ConfigOptionBool(false), idx, idx);
+                    idx++;
+                }
+            idx = num_extruders;
+            if (key == "nozzle_diameter")
+                for(std::string color: colors){
+                    static_cast<ConfigOptionVectorBase*>(opt)->set_at(new ConfigOptionFloat(0.4), idx, idx);
+                    idx++;
+                }
+        }
+    }
+}
+
+bool DynamicPrintConfig::store_mixing_color(std::string color, int extruder_id, int to_delete)
+{
+    std::vector<std::string> mixing_colors;
+    for (const std::string &key : print_config_def.extruder_option_keys())
+        if (key == "stored_mixing_colors"){
+            auto *opt = this->option(key, false);
+            assert(opt != nullptr);
+            assert(opt->is_vector());
+            mixing_colors = (static_cast<ConfigOptionStrings*>(opt))->values;
+            if(std::string(mixing_colors.at(extruder_id)) == "" || !joined_has_val(std::string(mixing_colors.at(extruder_id)),"/",color)){
+                std::string result;
+                if(to_delete >-1){
+                    std::vector<std::string> vals = split(std::string(mixing_colors.at(extruder_id)),"/");
+                    for(int i = 0; i < to_delete; i++){
+                        result += "/"+vals[i];
+                    }
+                    for(int i = to_delete + 1; i < vals.size(); i++){
+                        result += "/"+vals[i];
+                    }
+                }else result = "/"+std::string(mixing_colors.at(extruder_id));
+                if(color == "") result.erase(0, 1);
+                static_cast<ConfigOptionVectorBase*>(opt)->set_at(new ConfigOptionString(color+result), extruder_id, extruder_id);
+                return true;
+            }
+        }
+    return false;
+}
+
+int DynamicPrintConfig::id_like_this_virtual_extruder(std::string& color, int extruder_id, int num_extruders, bool noNew)
+{
+    //const auto &defaults = FullPrintConfig::defaults();
+    std::vector<int> virt_extruders;
+    // try to find an exisitng extruder
+    for (const std::string &key : print_config_def.extruder_option_keys())
+        if (key == "virtual_extruder"){
+            auto *opt = this->option(key, false);
+            assert(opt != nullptr);
+            assert(opt->is_vector());
+            virt_extruders = (static_cast<ConfigOptionInts*>(opt))->values;
+        }
+    for (const std::string &key : print_config_def.extruder_option_keys())
+        if (key == "extruder_colour"){
+            auto *opt = this->option(key, false);
+            assert(opt != nullptr);
+            assert(opt->is_vector());
+            int i = 0;
+            for(std::string ext_color: (static_cast<ConfigOptionStrings*>(opt))->values){
+                if(ext_color == color && virt_extruders.at(i) == extruder_id) return i;
+                i++;
+            }
+        }
+    // else create newly
+    if(!noNew){
+        std::vector<std::string> colors;
+        colors.push_back(color);
+        this->add_virtual_extruders(colors, extruder_id, num_extruders);
+        return num_extruders;
+    } else return -1;
+}
+
+void DynamicPrintConfig::remove_all_virtual_extruders()
+{
+    const auto &defaults = FullPrintConfig::defaults();
+    // resize the amount of extruders and set the colour to the right colour
+    for (const std::string &key : print_config_def.extruder_option_keys()) {
+        if (key == "default_filament_profile")// || virtualExtruders && key == "nozzle_diameter")
+            // Don't resize this field, as it is presented to the user at the "Dependencies" page of the Printer profile and we don't want to present
+            // empty fields there, if not defined by the system profile.
+            continue;
+        auto *opt = this->option(key, false);
+        assert(opt != nullptr);
+        assert(opt->is_vector());
+        if (opt != nullptr && opt->is_vector()){
+            static_cast<ConfigOptionVectorBase*>(opt)->resize(16, defaults.option(key));
+        }
+    }
+}
+
+void DynamicPrintConfig::set_extruder_color(std::string color, unsigned int idx)
+{
+    const auto &defaults = FullPrintConfig::defaults();
+    int i = 0;
+    for (const std::string &key : print_config_def.extruder_option_keys()) {
+        if (key == "extruder_colour" && i++ == idx){
+            auto *opt = this->option(key, false);
+            assert(opt != nullptr);
+            assert(opt->is_vector());
+            if (opt != nullptr && opt->is_vector())
+                static_cast<ConfigOptionVectorBase*>(opt)->set_at(new ConfigOptionString(color), idx, idx);//resize(num_extruders,
+        }
     }
 }
 

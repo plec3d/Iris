@@ -10,6 +10,7 @@
 #include "Line.hpp"
 #include "Point.hpp"
 #include "Polygon.hpp"
+#include "PrintConfig.hpp"
 #include "Polyline.hpp"
 #include "PrincipalComponents2D.hpp"
 #include "libslic3r.h"
@@ -35,6 +36,7 @@ public:
     ExPolygons                   expolygons_owned;
     // Lower slices, all regions.
     const ExPolygons   			&lower_slices;
+    bool is_bridge {false};
     // Scaled extrusion width of the infill.
     coord_t                      spacing;
     // Angle resolution for the brute force search of the best bridging angle.
@@ -46,8 +48,7 @@ public:
     BridgeDetector(const ExPolygons &_expolygons, const ExPolygons &_lower_slices, coord_t _extrusion_width);
     // If bridge_direction_override != 0, then the angle is used instead of auto-detect.
     bool detect_angle(double bridge_direction_override = 0.);
-    // Coverage is currently only used by the unit tests. It is extremely slow and unreliable!
-    Polygons coverage(double angle = -1) const;
+    Polygons coverage(double angle = -1, bool precise = true) const;
     void unsupported_edges(double angle, Polylines* unsupported) const;
     Polylines unsupported_edges(double angle = -1) const;
     
@@ -58,22 +59,30 @@ private:
     void initialize();
 
     struct BridgeDirection {
-        BridgeDirection(double a = -1.) : angle(a), coverage(0.), max_length(0.) {}
-        // the best direction is the one causing most lines to be bridged (thus most coverage)
-        bool operator<(const BridgeDirection &other) const {
-            // Initial sort by coverage only - comparator must obey strict weak ordering
-            return this->coverage > other.coverage;
-        };
+        BridgeDirection(double a = -1., float along_perimeter = 0) : angle(a), coverage(0.), along_perimeter_length(along_perimeter){}
+
         double angle;
         double coverage;
-        double max_length;
+        float along_perimeter_length;
+        Polyline _pedestal;
+	bool has_overhang_holes = false;
+        coordf_t total_length_anchored = 0;
+        coordf_t median_length_anchor = 0;
+        coordf_t max_length_anchored = 0;
+        uint32_t nb_lines_anchored = 0;
+        coordf_t total_length_free = 0;
+        coordf_t max_length_free = 0;
+        uint32_t nb_lines_free = 0;
     };
-
+public:
     // Get possible briging direction candidates.
-    std::vector<double> bridge_direction_candidates() const;
+    std::vector<BridgeDirection> bridge_direction_candidates(bool only_from_polygon = false) const;
 
     // Open lines representing the supporting edges.
     Polylines _edges;
+
+    Polyline _pedestal;
+    bool has_overhang_holes {false};
     // Closed polygons representing the supporting areas.
     ExPolygons _anchor_regions;
 };

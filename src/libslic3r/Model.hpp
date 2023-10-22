@@ -26,6 +26,7 @@
 #include "CustomGCode.hpp"
 #include "enum_bitmask.hpp"
 #include "TextConfiguration.hpp"
+#include "AppConfig.hpp"
 
 #include <map>
 #include <memory>
@@ -168,6 +169,7 @@ private:
 
     // To be accessed by the Model.
     friend class Model;
+    AppConfig*	app_config=NULL;
 	// Constructor, which assigns a new unique ID to the material and to its config.
 	ModelMaterial(Model *model) : m_model(model) { assert(this->id().valid()); }
 	// Copy constructor copies the IDs of the ModelMaterial and its config, and m_model!
@@ -340,6 +342,10 @@ public:
     // Instances of this ModelObject. Each instance defines a shift on the print bed, rotation around the Z axis and a uniform scaling.
     // Instances are owned by this ModelObject.
     ModelInstancePtrs       instances;
+    // used mixing extruder colors
+    std::vector<std::string> colors;// = {"#FF0000","#00FF00","#0000FF"};
+    // Parent object, owning this ModelObject. Set to nullptr here, so the macros above will have it initialized.
+    Model                *m_model { nullptr };
     // Printable and modifier volumes, each with its material ID and a set of override parameters.
     // ModelVolumes are owned by this ModelObject.
     ModelVolumePtrs         volumes;
@@ -592,7 +598,7 @@ private:
     OBJECTBASE_DERIVED_COPY_MOVE_CLONE(ModelObject)
 
     // Parent object, owning this ModelObject. Set to nullptr here, so the macros above will have it initialized.
-    Model                *m_model { nullptr };
+    //Model                *m_model { nullptr };
 
     // Bounding box, cached.
     mutable BoundingBoxf3 m_bounding_box_approx;
@@ -644,10 +650,11 @@ private:
             m_raw_bounding_box, m_raw_bounding_box_valid, m_raw_mesh_bounding_box, m_raw_mesh_bounding_box_valid,
             cut_connectors, cut_id);
 	}
-
+    AppConfig*	app_config=NULL;
     // Called by Print::validate() from the UI thread.
     unsigned int update_instances_print_volume_state(const BuildVolume &build_volume);
-
+    bool load_app_config();
+    
     // Called by min_z(), max_z()
     void update_min_max_z();
 };
@@ -1245,6 +1252,9 @@ public:
     ModelObjectPtrs     objects;
     // Wipe tower object.
     ModelWipeTower	    wipe_tower;
+
+    // used mixing extruder colors
+    std::vector<std::string> colors;// = {"#FF0000","#00FF00","#0000FF"};
 
     // Extensions for color print
     CustomGCode::Info custom_gcode_per_print_z;

@@ -211,6 +211,12 @@ public:
     Point  rotated(double angle) const { Point res(*this); res.rotate(angle); return res; }
     Point  rotated(double cos_a, double sin_a) const { Point res(*this); res.rotate(cos_a, sin_a); return res; }
     Point  rotated(double angle, const Point &center) const { Point res(*this); res.rotate(angle, center); return res; }
+    double distance_to(const Point &point) const { return (point - *this).cast<double>().norm(); }
+    double distance_to_square(const Point &point) const {
+        double dx = double(point.x() - this->x());
+        double dy = double(point.y() - this->y());
+        return dx*dx + dy*dy;
+    }
 };
 
 inline bool operator<(const Point &l, const Point &r) 

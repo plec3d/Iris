@@ -247,7 +247,7 @@ PrecomputedSliceConnections precompute_slices_connections(const PrintObject *po)
 
 float get_flow_width(const LayerRegion *region, ExtrusionRole role)
 {
-    if (role == ExtrusionRole::BridgeInfill) return region->flow(FlowRole::frExternalPerimeter).width();
+    if (role == ExtrusionRole::BridgeInfill || role == ExtrusionRole::OverhangInfill || role == ExtrusionRole::PedestalInfill) return region->flow(FlowRole::frExternalPerimeter).width();
     if (role == ExtrusionRole::ExternalPerimeter) return region->flow(FlowRole::frExternalPerimeter).width();
     if (role == ExtrusionRole::GapFill) return region->flow(FlowRole::frInfill).width();
     if (role == ExtrusionRole::Perimeter) return region->flow(FlowRole::frPerimeter).width();
@@ -327,7 +327,7 @@ std::vector<ExtrusionLine> check_extrusion_entity_stability(const ExtrusionEntit
                                                             const Params                               &params)
 {
     assert(!entity->is_collection());
-    if (entity->role().is_bridge() && !entity->role().is_perimeter()) {
+    if ((entity->role().is_bridge() || entity->role().is_overhang()  || entity->role().is_pedestal() )&& !entity->role().is_perimeter()) {
         // pure bridges are handled separately, beacuse we need to align the forward and backward direction support points
         if (entity->length() < scale_(params.min_distance_to_allow_local_supports)) {
             return {};

@@ -661,6 +661,7 @@ bool PrintObject::invalidate_state_by_config_options(
             || opt_key == "first_layer_extrusion_width"
             || opt_key == "perimeter_extrusion_width"
             || opt_key == "infill_overlap"
+            || opt_key == "first_internal_on_overhangs"
             || opt_key == "external_perimeters_first") {
             steps.emplace_back(posPerimeters);
         } else if (
@@ -767,8 +768,14 @@ bool PrintObject::invalidate_state_by_config_options(
         } else if (
                opt_key == "top_fill_pattern"
             || opt_key == "bottom_fill_pattern"
+            || opt_key == "solid_fill_pattern"
+            || opt_key == "bridge_fill_pattern"
+            || opt_key == "overhang_fill_pattern"
+            || opt_key == "pedestal_fill_pattern"            
             || opt_key == "external_fill_link_max_length"
             || opt_key == "fill_angle"
+            || opt_key == "top_fill_angle"
+            || opt_key == "bottom_fill_angle"
             || opt_key == "infill_anchor"
             || opt_key == "infill_anchor_max"
             || opt_key == "top_infill_extrusion_width"
@@ -798,6 +805,7 @@ bool PrintObject::invalidate_state_by_config_options(
             || opt_key == "fuzzy_skin_thickness"
             || opt_key == "fuzzy_skin_point_dist"
             || opt_key == "overhangs"
+            || opt_key == "overhangs_threshold"
             || opt_key == "thin_walls"
             || opt_key == "thick_bridges") {
             steps.emplace_back(posPerimeters);
@@ -814,8 +822,8 @@ bool PrintObject::invalidate_state_by_config_options(
                opt_key == "use_nonplanar_layers"
             || opt_key == "nonplanar_layers_angle"
             || opt_key == "nonplanar_layers_height") {
-            // steps.emplace_back(posPerimeters);
-            // steps.emplace_back(posInfill);
+             steps.emplace_back(posPerimeters);
+             steps.emplace_back(posInfill);
             steps.emplace_back(posSlice);
         } else if (
             opt_key == "perimeter_generator"
@@ -1245,7 +1253,7 @@ void
 PrintObject::detect_nonplanar_surfaces()
 {
     //skip if not active
-    if(!m_config.use_nonplanar_layers.value) return;
+    //if(!m_config.use_nonplanar_layers.value) return;
 
     bool moved_surfaces = false;
 
@@ -1263,7 +1271,7 @@ PrintObject::detect_nonplanar_surfaces()
                     Layer* home_layer        = *home_layer_it;
                     LayerRegion &home_layerm = *home_layer->m_regions[region_id];
                     //continue if home layer is not maximum height of nonplanar_surface - the desired distance to the top of the surface for more than one top solid layer
-                    if (home_layer->slice_z > nonplanar_surface.stats.max.z - distance_to_top) continue;
+                    if (!this->config().use_nonplanar_layers.value|| home_layer->slice_z > nonplanar_surface.stats.max.z - distance_to_top) continue;
 
                     //process layers
                     for (LayerPtrs::iterator layer_it = this->m_layers.begin(); layer_it != this->m_layers.end(); ++layer_it){
@@ -1356,6 +1364,7 @@ PrintObject::detect_nonplanar_surfaces()
     }
 
     if(moved_surfaces) {
+        this->m_config.has_nonplanar_layers.set(new ConfigOptionBool(true));
         // After changing a layer's slices, we must rebuild its lslices into islands
         this->make_slices();
         this->lslices_were_updated();
@@ -1379,7 +1388,7 @@ PrintObject::detect_nonplanar_surfaces()
 void
 PrintObject::project_nonplanar_surfaces()
 {
-    if(!m_config.use_nonplanar_layers.value) return;
+    if(!m_config.has_nonplanar_layers.value) return;
 
     //TODO check when steps should be invalidated
     if (is_step_done(posNonplanarProjection)) return;
@@ -3205,15 +3214,45 @@ void PrintObject::combine_infill()
     }
 } // void PrintObject::combine_infill()
 
-void PrintObject::_generate_support_material()
+void PrintObject::_generate_support_material(bool useSecondarySetting)
 {
-    if (this->has_support() && (m_config.support_material_style == smsTree || m_config.support_material_style == smsOrganic)) {
-        fff_tree_support_generate(*this, std::function<void()>([this](){ this->throw_if_canceled(); }));
+    const OverhangSetting setting = useSecondarySetting?m_config.overhang_secondary_setting:m_config.overhang_primary_setting;
+
+    if(setting != osInactive){
+	if(setting == osOrganic1 || setting == osOrganic2 || setting == osOrganic3)
+		m_config.support_material_style.value = smsOrganic;
+	else
+		m_config.support_material_style.value = smsSnug;
+	if(setting == osOrganic1)
+		m_config.overhang_margin.value = 0;
+	else if(setting == osOrganic2)
+                m_config.overhang_margin.value = 3.35;
+	else if(setting == osOrganic3)
+                m_config.overhang_margin.value = 50;
+	else if(setting == osClassic1)
+                m_config.overhang_margin.value = 0;
+	else if(setting == osClassic2)
+                m_config.overhang_margin.value = 70;
+	else if(setting == osClassic3)
+                m_config.overhang_margin.value = 150;
+    }
+    bool hasSupports = false;
+    if (m_config.support_material_style == smsTree || m_config.support_material_style == smsOrganic) {
+	fff_tree_support_generate(*this, std::function<void()>([this](){ this->throw_if_canceled(); }));
+	if(!useSecondarySetting && m_config.overhang_primary_setting != osInactive && m_config.overhang_secondary_setting != osInactive){
+		for (Layer *l : m_support_layers)
+        		if(l->has_extrusions()) hasSupports = true;
+		if(!hasSupports) this->_generate_support_material(true);
+	}
+
     } else {
-        // If support style is set to Organic however only raft will be built but no support,
-        // build snug raft instead.
         PrintObjectSupportMaterial support_material(this, m_slicing_params);
         support_material.generate(*this);
+        if(!useSecondarySetting && m_config.overhang_primary_setting != osInactive && m_config.overhang_secondary_setting != osInactive){
+                    for (Layer *l : m_support_layers)
+                            if(l->has_extrusions()) hasSupports = true;
+            if(!hasSupports) this->_generate_support_material(true);
+        }
     }
 }
 

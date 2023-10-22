@@ -190,6 +190,7 @@ unsigned int picking_encode(unsigned char r, unsigned char g, unsigned char b);
 // Produce an alpha channel checksum for the red green blue components. The alpha channel may then be used to verify, whether the rgb components
 // were not interpolated by alpha blending or multi sampling.
 unsigned char picking_checksum_alpha_channel(unsigned char red, unsigned char green, unsigned char blue);
+float calcRayDistRatio(const std::vector<ColorRGB>& mixing_colors, const ColorRGB& mixing_color, const ColorRGB& target);
 
 } // namespace Slic3r
 

@@ -283,6 +283,8 @@ private:
 	float  m_perimeter_speed    = 0.f;
     float  m_first_layer_speed  = 0.f;
     size_t m_first_layer_idx    = size_t(-1);
+	float  m_speed              = 0.f;  // Wipe tower speed in mm/s.
+	float  m_wipe_starting_speed = 0.f; // Starting speed during wipe, up to m_speed.
 
 	// G-code generator parameters.
     float           m_cooling_tube_retraction   = 0.f;

@@ -22,6 +22,7 @@ namespace FFFSupport {
 // To be called if PrintObjectConfig::dont_support_bridges.
 void remove_bridges_from_contacts(
     const PrintConfig   &print_config, 
+    const PrintObjectConfig   &object_config, 
     const Layer         &lower_layer,
     const LayerRegion   &layerm,
     float                fw, 

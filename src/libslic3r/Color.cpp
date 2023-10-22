@@ -4,10 +4,17 @@
 ///|/
 #include "libslic3r.h"
 #include "Color.hpp"
-
+#include "AABBMesh.hpp"
+#include "boost/lexical_cast.hpp"
 #include <random>
 
 static const float INV_255 = 1.0f / 255.0f;
+
+template<typename BidiIt>
+bool next_partial_permutation(BidiIt first, BidiIt middle, BidiIt last) {
+  std::reverse(middle, last);
+  return std::next_permutation(first, last);
+}
 
 namespace Slic3r {
 
@@ -406,6 +413,101 @@ unsigned char picking_checksum_alpha_channel(unsigned char red, unsigned char gr
 	// Flip every second bit to increase the enthropy even more.
 	b ^= 0x55;
 	return b;
+}
+
+ColorRGB calc_midpoint(std::vector<ColorRGB> colors){
+	float sum_R = 0;
+	float sum_G = 0;
+	float sum_B = 0;
+	for(ColorRGB color: colors){
+		sum_R += color.r();
+		sum_G += color.g();
+		sum_B += color.b();
+	}
+	return ColorRGB(sum_R/colors.size(),sum_G/colors.size(),sum_B/colors.size());
+}
+
+bool lies_in_same_direction(ColorRGB midpoint, ColorRGB opposite, ColorRGB target){
+	return ((opposite.r() - midpoint.r()) / (opposite.r() - midpoint.r()) ==  
+			(target.r() - midpoint.r()) / (target.r() - midpoint.r()) &&
+			(opposite.g() - midpoint.g()) / (opposite.g() - midpoint.g()) ==  
+			(target.g() - midpoint.g()) / (target.g() - midpoint.g()) &&
+			(opposite.b() - midpoint.b()) / (opposite.b() - midpoint.b()) ==  
+			(target.b() - midpoint.b()) / (target.b() - midpoint.b()));
+}
+
+// checks the boundaries touching the color, if indeed reached the boundary or no color return true, else return false
+bool is_within_colorspace_boundaries(std::vector<ColorRGB> mixing_colors, ColorRGB target_color){
+	// loop each mixing color and get its needed ratio
+	for(const ColorRGB& color: mixing_colors)
+		if (calcRayDistRatio(mixing_colors, color, target_color) == -1)
+			return false;
+
+	return true;
+}
+
+float compare_color_brightness(ColorRGB& color_a, ColorRGB& color_b){
+	return color_a.r() + color_a.g() + color_a.b() < color_b.r() + color_b.g() + color_b.b();
+}
+
+float calc_distance(ColorRGB color_a, ColorRGB color_b){
+	float dist = std::sqrt(std::pow(color_b.r()-color_a.r(),2)+std::pow(color_b.g()-color_a.g(),2)+std::pow(color_b.b()-color_a.b(),2));
+	return dist;
+}
+
+float calcRayDistRatio(const std::vector<ColorRGB>& mixing_colors, const ColorRGB& mixing_color, const ColorRGB& target){
+
+  // load the colors to triangles
+  indexed_triangle_set its;
+  for(int i =0; i<mixing_colors.size()-1;i++)
+		its.vertices.push_back({mixing_colors[0].r(),mixing_colors[0].g(),mixing_colors[0].b()});
+
+  // load the triangle(s)
+  if(mixing_colors.size()>3){
+	// get all permutations
+	std::vector<int> permindices;
+	for(int i = 0;i < mixing_colors.size();i++)
+		permindices.push_back(i);
+	do 	// use the permutation
+		its.indices.push_back({permindices[0],permindices[1],permindices[2]});
+	// make a permutation of size 3
+    while(next_partial_permutation(permindices.begin(), permindices.begin() + 3, permindices.end()));
+  }else
+	its.indices.push_back({1,2,(mixing_colors.size()==3?3:1)});
+
+  // init the Mesh
+  AABBMesh AM = AABBMesh(its, 0.01);
+  
+  // make s and dir
+  Vec3d s = {target.r(),target.g(),target.b()};
+  Vec3d src = {mixing_color.r(),mixing_color.g(),mixing_color.b()};
+  Vec3d dir = Vec3d(s - src);
+
+  AABBMesh::hit_result hit = AM.query_ray_hit(s, dir);
+  if(hit.is_hit())
+	return calc_distance(mixing_color, target)/hit.distance();
+
+  return -1;
+}
+
+std::string generate_mixing_color(const std::vector<ColorRGB> mixing_colors, const ColorRGB target_color)
+{
+	std::string out = "M165";
+	std::vector<float> ratios;
+	std::string tools = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+
+	// loop each mixing color and get its needed ratio
+	int i = 0;
+	for(const ColorRGB& color: mixing_colors){
+		float dist = calcRayDistRatio(mixing_colors, color, target_color);
+		if(dist < 0) return "";
+		ratios.push_back(dist);
+        
+		// build a string with each
+		out += " " + tools[i++] + boost::lexical_cast<std::string>(dist);
+	}
+
+	return out;
 }
 
 } // namespace Slic3r

@@ -254,6 +254,11 @@ void PreferencesDialog::build()
 			L("If this is enabled, Slic3r will auto-center objects around the print bed center."),
 			app_config->get_bool("autocenter"));
 
+		append_bool_option(m_optgroup_general, "antigravity", 
+			L("Don't put parts on bed automatically, parts can float"),
+			L("If this is enabled, parts are allowed to float above or below the bed."),
+			app_config->get_bool("antigravity"));
+
 		append_bool_option(m_optgroup_general, "background_processing", 
 			L("Background processing"),
 			L("If this is enabled, Slic3r will pre-process objects as soon "

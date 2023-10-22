@@ -58,12 +58,25 @@ public:
     // return false if this extruder was already selected
     bool        need_toolchange(unsigned int extruder_id) const 
         { return m_extruder == nullptr || m_extruder->id() != extruder_id; }
-    std::string set_extruder(unsigned int extruder_id)
-        { return this->need_toolchange(extruder_id) ? this->toolchange(extruder_id) : ""; }
+    std::string set_extruder(unsigned int extruder_id, PrintConfig& m_config)
+        { 
+            int mix_color_cnt = m_config.multi_extruder_colors.get_at(extruder_id);
+            std::vector<std::string> mixing_colors;
+            std::string target_color = m_config.extruder_colour.get_at(extruder_id);
+            //bool is_mixing = m_config.mixing_extruder.get_at(extruder_id);
+            if(mix_color_cnt > 0){
+                mixing_colors.push_back(m_config.multi_extruder_color1.get_at(0));
+                if(mix_color_cnt > 1) mixing_colors.push_back(m_config.multi_extruder_color2.get_at(0));
+                if(mix_color_cnt > 2) mixing_colors.push_back(m_config.multi_extruder_color3.get_at(0));
+                if(mix_color_cnt > 3) mixing_colors.push_back(m_config.multi_extruder_color4.get_at(0));
+            }
+            return this->need_toolchange(extruder_id) ? this->toolchange(extruder_id, mixing_colors, target_color) : ""; 
+        }
     // Prefix of the toolchange G-code line, to be used by the CoolingBuffer to separate sections of the G-code
     // printed with the same extruder.
     std::string toolchange_prefix() const;
-    std::string toolchange(unsigned int extruder_id);
+    std::string toolchange(unsigned int extruder_id, const std::vector<std::string>& mixing_colors, const std::string& target_color);
+    std::string generate_mixing_color(const std::vector<std::string>& mixing_colors, const std::string& target_color);
     std::string set_speed(double F, const std::string &comment = std::string(), const std::string &cooling_marker = std::string()) const;
     std::string travel_to_xy(const Vec2d &point, const std::string &comment = std::string());
     std::string travel_to_xyz(const Vec3d &point, const std::string &comment = std::string());
@@ -93,10 +106,10 @@ public:
     static bool supports_separate_travel_acceleration(GCodeFlavor flavor);
 
     // To be called by the CoolingBuffer from another thread.
-    static std::string set_fan(const GCodeFlavor gcode_flavor, bool gcode_comments, unsigned int speed);
+    static std::string set_fan(const GCodeFlavor gcode_flavor, bool gcode_comments, unsigned int speed, unsigned int fantool);
     // To be called by the main thread. It always emits the G-code, it does not remember the previous state.
     // Keeping the state is left to the CoolingBuffer, which runs asynchronously on another thread.
-    std::string set_fan(unsigned int speed) const;
+    std::string set_fan(unsigned int spee, unsigned int fantool) const;
 
 private:
 	// Extruders are sorted by their ID, so that binary search is possible.

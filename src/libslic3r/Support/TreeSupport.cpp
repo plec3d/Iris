@@ -253,7 +253,7 @@ static std::vector<std::pair<TreeSupportSettings, std::vector<size_t>>> group_me
                     overhangs = diff(overhangs, blockers_layers[layer_id], ApplySafetyOffset::Yes);
                 if (config.dont_support_bridges) {
                     for (const LayerRegion *layerm : current_layer.regions())
-                        remove_bridges_from_contacts(print_config, lower_layer, *layerm, 
+                        remove_bridges_from_contacts(print_config, print_object.config(), lower_layer, *layerm, 
                             float(layerm->flow(frExternalPerimeter).scaled_width()), overhangs);
                 }
             }

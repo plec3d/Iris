@@ -580,6 +580,8 @@ const std::array<ColorRGBA, static_cast<size_t>(GCodeExtrusionRole::Count)> GCod
     { 0.32f, 0.12f, 0.45f, 1.0f },   // GCodeExtrusionRole::TopSolidInfillNonplanar
     { 1.00f, 0.55f, 0.41f, 1.0f },   // GCodeExtrusionRole::Ironing
     { 0.30f, 0.50f, 0.73f, 1.0f },   // GCodeExtrusionRole::BridgeInfill
+    { 0.30f, 1.00f, 0.73f, 1.0f },   // GCodeExtrusionRole::OverhangInfill
+    { 1.00f, 0.50f, 0.73f, 1.0f },   // GCodeExtrusionRole::PedestalInfill
     { 1.00f, 1.00f, 1.00f, 1.0f },   // GCodeExtrusionRole::GapFill
     { 0.00f, 0.53f, 0.43f, 1.0f },   // GCodeExtrusionRole::Skirt
     { 0.00f, 1.00f, 0.00f, 1.0f },   // GCodeExtrusionRole::SupportMaterial
@@ -2325,7 +2327,7 @@ void GCodeViewer::load_wipetower_shell(const Print& print)
         const double max_z = print.objects()[0]->model_object()->get_model()->max_z();
         const PrintConfig& config = print.config();
         const size_t extruders_count = config.nozzle_diameter.size();
-        if (extruders_count > 1 && config.wipe_tower && !config.complete_objects) {
+        if (extruders_count > 1 && config.wipe_tower && !(config.complete_objects || config.parallel_objects)) {
             const WipeTowerData& wipe_tower_data = print.wipe_tower_data(extruders_count);
             const float depth = wipe_tower_data.depth;
             const std::vector<std::pair<float, float>> z_and_depth_pairs = print.wipe_tower_data(extruders_count).z_and_depth_pairs;

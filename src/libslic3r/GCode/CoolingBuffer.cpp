@@ -807,7 +807,7 @@ std::string CoolingBuffer::apply_layer_cooldown(
         }
         if (fan_speed_new != m_fan_speed) {
             m_fan_speed = fan_speed_new;
-            new_gcode  += GCodeWriter::set_fan(m_config.gcode_flavor, m_config.gcode_comments, m_fan_speed);
+            new_gcode  += GCodeWriter::set_fan(m_config.gcode_flavor, m_config.gcode_comments, m_fan_speed, m_current_extruder); //Added m_current_extruder to call by CRobson
         }
         custom_fan_speed_limits.first = std::min(custom_fan_speed_limits.first, custom_fan_speed_limits.second);
         return custom_fan_speed_limits;
@@ -832,17 +832,17 @@ std::string CoolingBuffer::apply_layer_cooldown(
         } else if (line->type & CoolingLine::TYPE_SET_FAN_SPEED) {
             int new_speed = std::clamp(line->fan_speed, fan_speed_limits.first, fan_speed_limits.second);
             if (m_fan_speed != new_speed) {
-                new_gcode += GCodeWriter::set_fan(m_config.gcode_flavor, m_config.gcode_comments, new_speed);
+                new_gcode += GCodeWriter::set_fan(m_config.gcode_flavor, m_config.gcode_comments, new_speed, m_current_extruder); //Added m_current_extruder to call by CRobson
                 m_fan_speed = new_speed;
             }
         } else if (line->type & CoolingLine::TYPE_RESET_FAN_SPEED){
             fan_speed_limits = change_extruder_set_fan();
         } else if (line->type & CoolingLine::TYPE_BRIDGE_FAN_START) {
             if (bridge_fan_control)
-                new_gcode += GCodeWriter::set_fan(m_config.gcode_flavor, m_config.gcode_comments, bridge_fan_speed);
+                new_gcode += GCodeWriter::set_fan(m_config.gcode_flavor, m_config.gcode_comments, bridge_fan_speed, m_current_extruder); //Added m_current_extruder to call by CRobson
         } else if (line->type & CoolingLine::TYPE_BRIDGE_FAN_END) {
             if (bridge_fan_control)
-                new_gcode += GCodeWriter::set_fan(m_config.gcode_flavor, m_config.gcode_comments, m_fan_speed);
+                new_gcode += GCodeWriter::set_fan(m_config.gcode_flavor, m_config.gcode_comments, m_fan_speed, m_current_extruder); //Added m_current_extruder to call by CRobson
         } else if (line->type & CoolingLine::TYPE_EXTRUDE_END) {
             // Just remove this comment.
         } else if (line->type & (CoolingLine::TYPE_ADJUSTABLE | CoolingLine::TYPE_ADJUSTABLE_EMPTY | CoolingLine::TYPE_EXTERNAL_PERIMETER | CoolingLine::TYPE_WIPE | CoolingLine::TYPE_HAS_F)) {

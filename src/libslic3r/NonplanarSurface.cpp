@@ -230,7 +230,7 @@ NonplanarSurface::horizontal_projection() const
         p.points[0] = Point(scale_(facet.second.vertex[0].x), scale_(facet.second.vertex[0].y));
         p.points[1] = Point(scale_(facet.second.vertex[1].x), scale_(facet.second.vertex[1].y));
         p.points[2] = Point(scale_(facet.second.vertex[2].x), scale_(facet.second.vertex[2].y));
-        p.make_counter_clockwise();  // do this after scaling, as winding order might change while doing that
+        //p.make_counter_clockwise();  // do this after scaling, as winding order might change while doing that
         pp.push_back(p);
     }
 

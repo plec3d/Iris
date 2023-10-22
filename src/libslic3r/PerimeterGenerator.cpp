@@ -125,7 +125,7 @@ ExtrusionMultiPath PerimeterGenerator::thick_polyline_to_multi_path(const ThickP
         }
 
         const double w        = fmax(line.a_width, line.b_width);
-        const Flow   new_flow = (role.is_bridge() && flow.bridge()) ? flow : flow.with_width(unscale<float>(w) + flow.height() * float(1. - 0.25 * PI));
+        const Flow   new_flow = ((role.is_bridge() || role.is_overhang() || role.is_pedestal())&& flow.bridge()) ? flow : flow.with_width(unscale<float>(w) + flow.height() * float(1. - 0.25 * PI));
         if (path.polyline.points.empty()) {
             path.polyline.append(line.a);
             path.polyline.append(line.b);
@@ -582,7 +582,7 @@ static ExtrusionEntityCollection traverse_extrusions(const PerimeterGenerator::P
                     for (const ExtrusionPath &path : paths) {
                         ++point_occurrence[path.polyline.first_point()].occurrence;
                         ++point_occurrence[path.polyline.last_point()].occurrence;
-                        if (path.role().is_bridge()) {
+                        if (path.role().is_bridge() || path.role().is_overhang() || path.role().is_pedestal()) {
                             point_occurrence[path.polyline.first_point()].is_overhang = true;
                             point_occurrence[path.polyline.last_point()].is_overhang  = true;
                         }
@@ -1109,14 +1109,14 @@ void PerimeterGenerator::process_arachne(
         // lower layer, so we take lower slices and offset them by half the nozzle diameter used
         // in the current layer
         double nozzle_diameter = params.print_config.nozzle_diameter.get_at(params.config.perimeter_extruder-1);
-        lower_slices_polygons_cache = offset(*lower_slices, float(scale_(+nozzle_diameter/2)));
+        lower_slices_polygons_cache = offset(*lower_slices, params.config.overhangs_threshold ? 0 : float(scale_(+nozzle_diameter/2)));
     }
 
     // we need to process each island separately because we might have different
     // extra perimeters for each one
     // detect how many perimeters must be generated for this island
     int        loop_number = params.config.perimeters + surface.extra_perimeters - 1; // 0-indexed loops
-    ExPolygons last        = offset_ex(surface.expolygon.simplify_p(params.scaled_resolution), - float(ext_perimeter_width / 2. - ext_perimeter_spacing / 2.));
+    ExPolygons last        = offset_ex(surface.expolygon.simplify_p(params.scaled_resolution), - float(ext_perimeter_width / (params.object_config.has_nonplanar_layers?2.:4.) - ext_perimeter_spacing / 2.));
     Polygons   last_p      = to_polygons(last);
 
     Arachne::WallToolPaths wallToolPaths(last_p, ext_perimeter_spacing, perimeter_spacing, coord_t(loop_number + 1), 0, params.layer_height, params.object_config, params.print_config);
@@ -1410,10 +1410,10 @@ void PerimeterGenerator::process_classic(
                     for (ExPolygon &ex : expp)
                         ex.medial_axis(min_width, ext_perimeter_width + ext_perimeter_spacing2, &thin_walls);
                 }
-                if (params.spiral_vase && offsets.size() > 1) {
+                /*if (params.spiral_vase && offsets.size() > 1) {
                 	// Remove all but the largest area polygon.
                 	keep_largest_contour_only(offsets);
-                }
+                }*/
             } else {
                 //FIXME Is this offset correct if the line width of the inner perimeters differs
                 // from the line width of the infill?

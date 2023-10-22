@@ -1013,7 +1013,7 @@ namespace SupportMaterialInternal {
             for (const ExtrusionEntity *ee2 : static_cast<const ExtrusionEntityCollection*>(ee)->entities) {
                 assert(! ee2->is_collection());
                 assert(! ee2->is_loop());
-                if (ee2->role() == ExtrusionRole::BridgeInfill)
+                if (ee2->role() == ExtrusionRole::BridgeInfill || ee2->role() == ExtrusionRole::OverhangInfill || ee2->role() == ExtrusionRole::PedestalInfill)
                     return true;
             }
         }
@@ -1286,7 +1286,7 @@ static inline std::tuple<Polygons, Polygons, Polygons, float> detect_overhangs(
 
             if (object_config.dont_support_bridges)
                 //FIXME Expensive, potentially not precise enough. Misses gap fill extrusions, which bridge.
-                remove_bridges_from_contacts(print_config, lower_layer, *layerm, fw, diff_polygons);
+                remove_bridges_from_contacts(print_config, object_config, lower_layer, *layerm, fw, diff_polygons);
 
             if (diff_polygons.empty())
                 continue;

@@ -13,6 +13,8 @@
 ///|/
 #include "GCodeWriter.hpp"
 #include "CustomGCode.hpp"
+#include "Color.hpp"
+#include "boost/lexical_cast.hpp"
 #include <algorithm>
 #include <iomanip>
 #include <iostream>
@@ -232,13 +234,41 @@ std::string GCodeWriter::update_progress(unsigned int num, unsigned int tot, boo
     return gcode.str();
 }
 
+std::string generate_mixing_color(const std::vector<std::string>& mixing_colors, const std::string& target_color)
+{
+	//std::string out = "M165";
+    std::ostringstream gcode;
+    gcode << "M165";
+	std::vector<float> ratios;
+	std::string tools = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+    ColorRGB tgt_color;
+    std::vector<ColorRGB> mx_colors;
+    for(const std::string& mix: mixing_colors){
+        decode_color(mix,tgt_color);
+        mx_colors.push_back(std::move(tgt_color));
+    }
+    decode_color(target_color, tgt_color);
+	// loop each mixing color and get its needed ratio
+	int i = 0;
+	for(ColorRGB& color: mx_colors){
+		float dist = 0.5;//calcRayDistRatio(mx_colors, color, tgt_color);
+		if(dist < 0) return "";
+		//ratios.push_back(dist);
+        
+		// build a string with each
+		gcode << " " << tools[i++] << boost::lexical_cast<std::string>(dist);
+	}
+
+	return gcode.str();
+}
+
 std::string GCodeWriter::toolchange_prefix() const
 {
     return FLAVOR_IS(gcfMakerWare) ? "M135 T" :
            FLAVOR_IS(gcfSailfish)  ? "M108 T" : "T";
 }
 
-std::string GCodeWriter::toolchange(unsigned int extruder_id)
+std::string GCodeWriter::toolchange(unsigned int extruder_id, const std::vector<std::string>& mixing_colors, const std::string& target_color)
 {
     // set the new extruder
 	auto it_extruder = Slic3r::lower_bound_by_predicate(m_extruders.begin(), m_extruders.end(), [extruder_id](const Extruder &e) { return e.id() < extruder_id; });
@@ -248,7 +278,13 @@ std::string GCodeWriter::toolchange(unsigned int extruder_id)
     // return the toolchange command
     // if we are running a single-extruder setup, just set the extruder and return nothing
     std::ostringstream gcode;
-    if (this->multiple_extruders) {
+    /*if(mixing_colors.size()>0){
+        gcode << (this->generate_mixing_color(mixing_colors, target_color)).c_str();
+        if (this->config.gcode_comments)
+            gcode << " ; change extruder";
+        gcode << "\n";
+        gcode << this->reset_e(true);
+    }else*/ if (this->multiple_extruders) {
         gcode << this->toolchange_prefix() << extruder_id;
         if (this->config.gcode_comments)
             gcode << " ; change extruder";
@@ -355,7 +391,7 @@ bool GCodeWriter::will_move_z(double z) const
         we don't perform an actual Z move. */
     if (m_lifted > 0) {
         double nominal_z = m_pos.z() - m_lifted;
-        if (z >= nominal_z && z <= m_pos.z())
+        if (z <= m_pos.z()) //if (z >= nominal_z && z <= m_pos.z())
             return false;
     }
     return true;
@@ -513,7 +549,7 @@ void GCodeWriter::update_position(const Vec3d &new_pos)
     m_pos = new_pos;
 }
 
-std::string GCodeWriter::set_fan(const GCodeFlavor gcode_flavor, bool gcode_comments, unsigned int speed)
+std::string GCodeWriter::set_fan(const GCodeFlavor gcode_flavor, bool gcode_comments, unsigned int speed, unsigned int fantool)
 {
     std::ostringstream gcode;
     if (speed == 0) {
@@ -538,7 +574,8 @@ std::string GCodeWriter::set_fan(const GCodeFlavor gcode_flavor, bool gcode_comm
         case gcfMachinekit:
             gcode << "M106 P" << 255.0 * speed / 100.0; break;
         default:
-            gcode << "M106 S" << 255.0 * speed / 100.0; break;
+            gcode << "M106 P" << fantool;
+            gcode << " S" << 255.0 * speed / 100.0; break;
         }
         if (gcode_comments) 
             gcode << " ; enable fan";
@@ -547,9 +584,9 @@ std::string GCodeWriter::set_fan(const GCodeFlavor gcode_flavor, bool gcode_comm
     return gcode.str();
 }
 
-std::string GCodeWriter::set_fan(unsigned int speed) const
+std::string GCodeWriter::set_fan(unsigned int speed, unsigned int fantool) const
 {
-    return GCodeWriter::set_fan(this->config.gcode_flavor, this->config.gcode_comments, speed);
+    return GCodeWriter::set_fan(this->config.gcode_flavor, this->config.gcode_comments, speed, fantool);
 }
 
 void GCodeFormatter::emit_axis(const char axis, const double v, size_t digits) {

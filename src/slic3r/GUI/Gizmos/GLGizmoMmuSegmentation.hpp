@@ -125,11 +125,18 @@ protected:
     std::string get_gizmo_leaving_text() const override { return _u8L("Leaving Multimaterial painting"); }
     std::string get_action_snapshot_name() const override { return _u8L("Multimaterial painting editing"); }
 
+    size_t                            m_selected_mixtruder  = 0;
+    std::vector<int>                  m_mixer_extruder_real_ids;
     size_t                            m_first_selected_extruder_idx  = 0;
     size_t                            m_second_selected_extruder_idx = 1;
+    bool                              m_has_mixing_extruder = false;
     std::vector<std::string>          m_original_extruders_names;
+    std::vector<std::string>          m_stored_mixing_colors;
     std::vector<ColorRGBA>            m_original_extruders_colors;
     std::vector<ColorRGBA>            m_modified_extruders_colors;
+    std::vector<std::string>          m_mixing_extruder_colors;
+    std::vector<std::string>          m_modified_mixer_colors;
+    std::vector<std::string>          m_model_colors;
     std::vector<int>                  m_original_volumes_extruder_idxs;
 
     static const constexpr float      CursorRadiusMin = 0.1f; // cannot be zero

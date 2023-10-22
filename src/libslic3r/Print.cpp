@@ -204,6 +204,7 @@ bool Print::invalidate_state_by_config_options(const ConfigOptionResolver & /* n
             osteps.emplace_back(posSlice);
         } else if (
                opt_key == "complete_objects"
+            || opt_key == "parallel_objects"
             || opt_key == "filament_type"
             || opt_key == "first_layer_temperature"
             || opt_key == "filament_loading_speed"
@@ -233,6 +234,8 @@ bool Print::invalidate_state_by_config_options(const ConfigOptionResolver & /* n
             || opt_key == "wipe_tower_bridging"
             || opt_key == "wipe_tower_extra_spacing"
             || opt_key == "wipe_tower_no_sparse_layers"
+            || opt_key == "wipe_tower_speed"
+            || opt_key == "wipe_tower_wipe_starting_speed"
             || opt_key == "wipe_tower_extruder"
             || opt_key == "wiping_volumes_matrix"
             || opt_key == "parking_pos_retraction"
@@ -254,6 +257,8 @@ bool Print::invalidate_state_by_config_options(const ConfigOptionResolver & /* n
         } else if (
                opt_key == "first_layer_extrusion_width" 
             || opt_key == "min_layer_height"
+            || opt_key == "first_layer_flow_ratio"
+            || opt_key == "top_layer_flow_ratio"
             || opt_key == "max_layer_height"
             || opt_key == "gcode_resolution") {
             osteps.emplace_back(posPerimeters);
@@ -514,11 +519,11 @@ std::string Print::validate(std::vector<std::string>* warnings) const
     if (extruders.empty())
         return _u8L("The supplied settings will cause an empty print.");
 
-    if (m_config.complete_objects) {
+    if (m_config.complete_objects || m_config.parallel_objects) {
+        if (!m_config.parallel_objects && !sequential_print_vertical_clearance_valid(*this))
+            return _u8L("Some objects are too tall and cannot be printed without extruder collisions.");
         if (!sequential_print_horizontal_clearance_valid(*this, const_cast<Polygons*>(&m_sequential_print_clearance_contours)))
             return _u8L("Some objects are too close; your extruder will collide with them.");
-        if (!sequential_print_vertical_clearance_valid(*this))
-            return _u8L("Some objects are too tall and cannot be printed without extruder collisions.");
     }
     else
         const_cast<Polygons*>(&m_sequential_print_clearance_contours)->clear();
@@ -532,7 +537,7 @@ std::string Print::validate(std::vector<std::string>* warnings) const
         for (const PrintObject *object : m_objects)
             total_copies_count += object->instances().size();
         // #4043
-        if (total_copies_count > 1 && ! m_config.complete_objects.value)
+        if (total_copies_count > 1 && (! m_config.complete_objects.value || !m_config.parallel_objects.value))
             return _u8L("Only a single object may be printed at a time in Spiral Vase mode. "
                      "Either remove all but the last object, or enable sequential mode by \"complete_objects\".");
         assert(m_objects.size() == 1);
@@ -613,7 +618,7 @@ std::string Print::validate(std::vector<std::string>* warnings) const
             return _u8L("Ooze prevention is only supported with the wipe tower when 'single_extruder_multi_material' is off.");
         if (m_config.use_volumetric_e)
             return _u8L("The Wipe Tower currently does not support volumetric E (use_volumetric_e=0).");
-        if (m_config.complete_objects && extruders.size() > 1)
+        if ((m_config.complete_objects || m_config.parallel_objects) && extruders.size() > 1)
             return _u8L("The Wipe Tower is currently not supported for multimaterial sequential prints.");
         
         if (m_objects.size() > 1) {
@@ -695,8 +700,8 @@ std::string Print::validate(std::vector<std::string>* warnings) const
         	} else if (extrusion_width_min <= layer_height) {
         		err_msg = (boost::format(_u8L("%1%=%2% mm is too low to be printable at a layer height %3% mm")) % opt_key % extrusion_width_min % layer_height).str();
 				return false;
-			} else if (extrusion_width_max >= max_nozzle_diameter * 3.) {
-				err_msg = (boost::format(_u8L("Excessive %1%=%2% mm to be printable with a nozzle diameter %3% mm")) % opt_key % extrusion_width_max % max_nozzle_diameter).str();
+			} else if (extrusion_width_max >= max_nozzle_diameter * 4.0) {
+                err_msg = (boost::format(_u8L("Excessive %1%=%2% mm to be printable with a nozzle diameter %3% mm")) % opt_key % extrusion_width_max % max_nozzle_diameter).str();
 				return false;
 			}
 			return true;
@@ -965,7 +970,7 @@ void Print::process()
         if (this->has_wipe_tower()) {
             //this->set_status(95, _u8L("Generating wipe tower"));
             this->_make_wipe_tower();
-        } else if (! this->config().complete_objects.value) {
+        } else if (! this->config().complete_objects.value /*&& !this->config().parallel_objects.value*/) {
         	// Initialize the tool ordering, so it could be used by the G-code preview slider for planning tool changes and filament switches.
         	m_tool_ordering = ToolOrdering(*this, -1, false);
             if (m_tool_ordering.empty() || m_tool_ordering.last_extruder() == unsigned(-1))
@@ -1605,6 +1610,10 @@ DynamicConfig PrintStatistics::config() const
     config.set_key_value("total_weight",              new ConfigOptionFloat(this->total_weight));
     config.set_key_value("total_wipe_tower_cost",     new ConfigOptionFloat(this->total_wipe_tower_cost));
     config.set_key_value("total_wipe_tower_filament", new ConfigOptionFloat(this->total_wipe_tower_filament));
+    config.set_key_value("individual_extruded_volume",  new ConfigOptionFloats(this->individual_extruded_volume));
+    config.set_key_value("individual_used_filament",    new ConfigOptionFloats(this->individual_used_filament));
+    config.set_key_value("individual_weight",           new ConfigOptionFloats(this->individual_weight));
+    config.set_key_value("individual_cost",             new ConfigOptionFloats(this->individual_cost));
     config.set_key_value("initial_tool",              new ConfigOptionInt(int(this->initial_extruder_id)));
     config.set_key_value("initial_extruder",          new ConfigOptionInt(int(this->initial_extruder_id)));
     config.set_key_value("initial_filament_type",     new ConfigOptionString(this->initial_filament_type));
@@ -1621,6 +1630,7 @@ DynamicConfig PrintStatistics::placeholders()
     for (const std::string &key : { 
         "print_time", "normal_print_time", "silent_print_time", 
         "used_filament", "extruded_volume", "total_cost", "total_weight", 
+        "individual_extruded_volume", "individual_used_filament", "individual_weight", "individual_cost",
         "total_toolchanges", "total_wipe_tower_cost", "total_wipe_tower_filament",
         "initial_tool", "initial_extruder", "initial_filament_type", "printing_filament_types", "num_printing_extruders" })
         config.set_key_value(key, new ConfigOptionString(std::string("{") + key + "}"));

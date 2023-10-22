@@ -638,6 +638,19 @@ ModelObject::~ModelObject()
     this->clear_instances();
 }
 
+bool ModelObject::load_app_config()
+{
+    if (!app_config) {
+        app_config = new AppConfig(AppConfig::EAppMode::Editor);
+        if(!app_config)
+            return false;
+        std::string error = app_config->load();
+        if(!error.empty())
+            return false;
+    }
+    return true;
+}
+
 // maintains the m_model pointer
 ModelObject& ModelObject::assign_copy(const ModelObject &rhs)
 {
@@ -1102,6 +1115,9 @@ void ModelObject::ensure_on_bed(bool allow_negative_z)
 {
     double z_offset = 0.0;
 
+    if(load_app_config() && app_config->get_bool("antigravity"))
+        return;
+    
     if (allow_negative_z) {
         if (parts_count() == 1) {
             const double min_z = this->min_z();

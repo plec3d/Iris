@@ -845,8 +845,11 @@ void PrintObject::make_slices()
 void
 PrintObject::find_nonplanar_surfaces()
 {
+    const PrintObjectConfig &object_config = this->print()->default_object_config();
+    const PrintRegionConfig &region_config = this->printing_region(0).config();
+
     //skip if not active
-    if(!m_config.use_nonplanar_layers.value) {
+    if(!object_config.use_nonplanar_layers.value) {
         BOOST_LOG_TRIVIAL(debug) << "Find nonplanar surfaces - disabled";
         return;
     }
@@ -868,7 +871,8 @@ PrintObject::find_nonplanar_surfaces()
                 Vec3d normal = mesh.normal_by_face_id(face_id);
 
                 //TODO check if normals exist
-                if (normal.z() >= std::cos(m_config.nonplanar_layers_angle.value * 3.14159265/180.0)) {
+                if (normal.z() >= std::cos(region_config.nonplanar_layers_angle.value * 3.14159265/180.0) && 
+                normal.z() <= 2*std::cos(region_config.nonplanar_layers_angle.value * 3.14159265/180.0)) {
                     //copy facet
                     NonplanarFacet new_facet;
                     new_facet.normal.x = normal.x();
@@ -918,7 +922,7 @@ PrintObject::find_nonplanar_surfaces()
 
             // check if surfaces maintain maximum printing height, if not, erase it
             for (NonplanarSurfaces::iterator it = m_nonplanar_surfaces.begin(); it!=m_nonplanar_surfaces.end();) {
-                if((*it).check_max_printing_height(m_config.nonplanar_layers_height.value)) {
+                if((*it).check_max_printing_height(region_config.nonplanar_layers_height.value)) {
                     BOOST_LOG_TRIVIAL(trace) << "Find nonplanar surfaces - deleted one surface due to max printing height constraint";
                     it = m_nonplanar_surfaces.erase(it);
                 }else {

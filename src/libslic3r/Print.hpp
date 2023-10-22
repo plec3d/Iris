@@ -420,7 +420,7 @@ private:
     void clip_fill_surfaces();
     void discover_horizontal_shells();
     void combine_infill();
-    void _generate_support_material();
+    void _generate_support_material(bool useSecondarySetting = false);
     std::pair<FillAdaptive::OctreePtr, FillAdaptive::OctreePtr> prepare_adaptive_infill_data(
         const std::vector<std::pair<const Surface*, float>>& surfaces_w_bottom_z) const;
     FillLightning::GeneratorPtr prepare_lightning_infill_data();
@@ -533,6 +533,10 @@ struct PrintStatistics
     double                          total_used_filament;
     double                          total_extruded_volume;
     double                          total_cost;
+    std::vector<double>             individual_extruded_volume;
+    std::vector<double>             individual_used_filament;
+    std::vector<double>             individual_weight;
+    std::vector<double>             individual_cost;
     int                             total_toolchanges;
     double                          total_weight;
     double                          total_wipe_tower_cost;
@@ -554,6 +558,10 @@ struct PrintStatistics
         total_used_filament    = 0.;
         total_extruded_volume  = 0.;
         total_cost             = 0.;
+        individual_extruded_volume.clear();
+        individual_used_filament.clear();
+        individual_weight.clear();
+        individual_cost.clear();
         total_toolchanges      = 0;
         total_weight           = 0.;
         total_wipe_tower_cost  = 0.;

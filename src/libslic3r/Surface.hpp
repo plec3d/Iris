@@ -52,32 +52,43 @@ public:
     double          bridge_angle     { -1. }; // in radians, ccw, 0 = East, only 0+ (negative means undefined)
     unsigned short  extra_perimeters {  0 };
     float           distance_to_top  {  0 };
-    
-    Surface(const Slic3r::Surface &rhs) :
-        surface_type(rhs.surface_type), expolygon(rhs.expolygon),
-        thickness(rhs.thickness), thickness_layers(rhs.thickness_layers), 
-        bridge_angle(rhs.bridge_angle), extra_perimeters(rhs.extra_perimeters) {}
-    Surface(SurfaceType surface_type, const ExPolygon &expolygon) : 
-        surface_type(surface_type), expolygon(expolygon) {}
-    Surface(const Surface &templ, const ExPolygon &expolygon) :
-        surface_type(templ.surface_type), expolygon(expolygon),
-        thickness(templ.thickness), thickness_layers(templ.thickness_layers),
-        bridge_angle(templ.bridge_angle), extra_perimeters(templ.extra_perimeters) {}
-    Surface(Surface &&rhs) :
-        surface_type(rhs.surface_type), expolygon(std::move(rhs.expolygon)),
-        thickness(rhs.thickness), thickness_layers(rhs.thickness_layers), 
-        bridge_angle(rhs.bridge_angle), extra_perimeters(rhs.extra_perimeters) {}
-    Surface(SurfaceType surface_type, ExPolygon &&expolygon) : 
-        surface_type(surface_type), expolygon(std::move(expolygon)) {}
-    Surface(const Surface &templ, ExPolygon &&expolygon) :
-        surface_type(templ.surface_type), expolygon(std::move(expolygon)),
-            thickness(templ.thickness), thickness_layers(templ.thickness_layers), 
-            bridge_angle(templ.bridge_angle), extra_perimeters(templ.extra_perimeters) {}
+    Polyline pedestal;
+
+    Surface(const Slic3r::Surface &rhs)
+        : surface_type(rhs.surface_type), expolygon(rhs.expolygon),pedestal(rhs.pedestal),
+            thickness(rhs.thickness), thickness_layers(rhs.thickness_layers), 
+            bridge_angle(rhs.bridge_angle), extra_perimeters(rhs.extra_perimeters)
+        {};
+
+    Surface(SurfaceType _surface_type, const ExPolygon &_expolygon)
+        : surface_type(_surface_type), expolygon(_expolygon),pedestal(Polyline()),
+            thickness(-1), thickness_layers(1), bridge_angle(-1), extra_perimeters(0)
+        {};
+    Surface(const Surface &other, const ExPolygon &_expolygon)
+        : surface_type(other.surface_type), expolygon(_expolygon),pedestal(other.pedestal),
+            thickness(other.thickness), thickness_layers(other.thickness_layers), 
+            bridge_angle(other.bridge_angle), extra_perimeters(other.extra_perimeters)
+        {};
+    Surface(Surface &&rhs)
+        : surface_type(rhs.surface_type), expolygon(std::move(rhs.expolygon)),pedestal(rhs.pedestal),
+            thickness(rhs.thickness), thickness_layers(rhs.thickness_layers), 
+            bridge_angle(rhs.bridge_angle), extra_perimeters(rhs.extra_perimeters)
+        {};
+    Surface(SurfaceType _surface_type, ExPolygon &&_expolygon)
+        : surface_type(_surface_type), expolygon(std::move(_expolygon)),pedestal(Polyline()),
+            thickness(-1), thickness_layers(1), bridge_angle(-1), extra_perimeters(0)
+        {};
+    Surface(const Surface &other, ExPolygon &&_expolygon)
+        : surface_type(other.surface_type), expolygon(std::move(_expolygon)),pedestal(other.pedestal),
+            thickness(other.thickness), thickness_layers(other.thickness_layers), 
+            bridge_angle(other.bridge_angle), extra_perimeters(other.extra_perimeters)
+        {};
 
     Surface& operator=(const Surface &rhs)
     {
         surface_type     = rhs.surface_type;
         expolygon        = rhs.expolygon;
+        pedestal         = rhs.pedestal;
         thickness        = rhs.thickness;
         thickness_layers = rhs.thickness_layers;
         bridge_angle     = rhs.bridge_angle;
@@ -91,6 +102,7 @@ public:
         surface_type     = rhs.surface_type;
         expolygon        = std::move(rhs.expolygon);
         thickness        = rhs.thickness;
+        pedestal         = rhs.pedestal;
         thickness_layers = rhs.thickness_layers;
         bridge_angle     = rhs.bridge_angle;
         extra_perimeters = rhs.extra_perimeters;

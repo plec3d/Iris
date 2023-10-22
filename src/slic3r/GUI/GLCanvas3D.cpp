@@ -222,6 +222,10 @@ void GLCanvas3D::LayersEditing::render_overlay(const GLCanvas3D& canvas)
     if (imgui.button(_L("Adaptive")))
         wxPostEvent((wxEvtHandler*)canvas.get_wxglcanvas(), Event<float>(EVT_GLCANVAS_ADAPTIVE_LAYER_HEIGHT_PROFILE, m_adaptive_quality));
 
+    ImGui::Separator();
+    if (imgui.button(_L("Snap to horizontal surfaces")))
+        wxPostEvent((wxEvtHandler*)canvas.get_wxglcanvas(), Event<float>(EVT_GLCANVAS_SNAP_TO_HORIZONTAL_LAYER_HEIGHT_PROFILE, m_adaptive_quality));
+    
     ImGui::SameLine();
     float text_align = ImGui::GetCursorPosX();
     ImGui::AlignTextToFramePadding();
@@ -568,6 +572,17 @@ void GLCanvas3D::LayersEditing::reset_layer_height_profile(GLCanvas3D& canvas)
 {
     const_cast<ModelObject*>(m_model_object)->layer_height_profile.clear();
     m_layer_height_profile.clear();
+    m_layers_texture.valid = false;
+    canvas.post_event(SimpleEvent(EVT_GLCANVAS_SCHEDULE_BACKGROUND_PROCESS));
+    wxGetApp().obj_list()->update_info_items(last_object_id);
+}
+
+void GLCanvas3D::LayersEditing::snap_to_horizontal_layer_height_profile(GLCanvas3D& canvas)
+{
+    this->update_slicing_parameters();
+    PrintObject::update_layer_height_profile(*m_model_object, *m_slicing_parameters, m_layer_height_profile);
+    m_layer_height_profile = layer_height_profile_snap_to_horizontal(m_layer_height_profile, *m_slicing_parameters, *m_model_object);
+    const_cast<ModelObject*>(m_model_object)->layer_height_profile.set(m_layer_height_profile);
     m_layers_texture.valid = false;
     canvas.post_event(SimpleEvent(EVT_GLCANVAS_SCHEDULE_BACKGROUND_PROCESS));
     wxGetApp().obj_list()->update_info_items(last_object_id);
@@ -1047,6 +1062,7 @@ wxDEFINE_EVENT(EVT_GLCANVAS_REDO, SimpleEvent);
 wxDEFINE_EVENT(EVT_GLCANVAS_COLLAPSE_SIDEBAR, SimpleEvent);
 wxDEFINE_EVENT(EVT_GLCANVAS_RESET_LAYER_HEIGHT_PROFILE, SimpleEvent);
 wxDEFINE_EVENT(EVT_GLCANVAS_ADAPTIVE_LAYER_HEIGHT_PROFILE, Event<float>);
+wxDEFINE_EVENT(EVT_GLCANVAS_SNAP_TO_HORIZONTAL_LAYER_HEIGHT_PROFILE, SimpleEvent);
 wxDEFINE_EVENT(EVT_GLCANVAS_SMOOTH_LAYER_HEIGHT_PROFILE, HeightProfileSmoothEvent);
 wxDEFINE_EVENT(EVT_GLCANVAS_RELOAD_FROM_DISK, SimpleEvent);
 wxDEFINE_EVENT(EVT_GLCANVAS_RENDER_TIMER, wxTimerEvent/*RenderTimerEvent*/);
@@ -1730,6 +1746,14 @@ void GLCanvas3D::adaptive_layer_height_profile(float quality_factor)
 {
     wxGetApp().plater()->take_snapshot(_L("Variable layer height - Adaptive"));
     m_layers_editing.adaptive_layer_height_profile(*this, quality_factor);
+    m_layers_editing.state = LayersEditing::Completed;
+    m_dirty = true;
+}
+
+void GLCanvas3D::snap_to_horizontal_layer_height_profile()
+{
+    wxGetApp().plater()->take_snapshot(_L("Variable layer height - Snap to horizontal"));
+    m_layers_editing.snap_to_horizontal_layer_height_profile(*this);
     m_layers_editing.state = LayersEditing::Completed;
     m_dirty = true;
 }
@@ -2506,8 +2530,8 @@ void GLCanvas3D::reload_scene(bool refresh_immediately, bool force_full_scene_re
         unsigned int extruders_count = (unsigned int)dynamic_cast<const ConfigOptionFloats*>(m_config->option("nozzle_diameter"))->values.size();
 
         const bool wt = dynamic_cast<const ConfigOptionBool*>(m_config->option("wipe_tower"))->value;
-        const bool co = dynamic_cast<const ConfigOptionBool*>(m_config->option("complete_objects"))->value;
-
+        const bool co = dynamic_cast<const ConfigOptionBool*>(m_config->option("complete_objects"))->value 
+                     || dynamic_cast<const ConfigOptionBool*>(m_config->option("parallel_objects"))->value;
         if (extruders_count > 1 && wt && !co) {
 
             const float x = dynamic_cast<const ConfigOptionFloat*>(m_config->option("wipe_tower_x"))->value;
@@ -3564,7 +3588,7 @@ void GLCanvas3D::on_mouse(wxMouseEvent& evt)
                 c == GLGizmosManager::EType::Scale ||
                 c == GLGizmosManager::EType::Rotate) {
                 show_sinking_contours();
-                if (current_printer_technology() == ptFFF && fff_print()->config().complete_objects)
+                if (current_printer_technology() == ptFFF && (fff_print()->config().complete_objects || fff_print()->config().parallel_objects))
                     update_sequential_clearance(true);
             }
         }
@@ -3769,7 +3793,7 @@ void GLCanvas3D::on_mouse(wxMouseEvent& evt)
             TransformationType trafo_type;
             trafo_type.set_relative();
             m_selection.translate(cur_pos - m_mouse.drag.start_position_3D, trafo_type);
-            if (current_printer_technology() == ptFFF && fff_print()->config().complete_objects)
+            if (current_printer_technology() == ptFFF && (fff_print()->config().complete_objects || fff_print()->config().parallel_objects))
                 update_sequential_clearance(false);
             wxGetApp().obj_manipul()->set_dirty();
             m_dirty = true;
@@ -4054,7 +4078,8 @@ void GLCanvas3D::do_move(const std::string& snapshot_type)
     for (const std::pair<int, int>& i : done) {
         ModelObject* m = m_model->objects[i.first];
         const double shift_z = m->get_instance_min_z(i.second);
-        if (current_printer_technology() == ptSLA || shift_z > SINKING_Z_THRESHOLD) {
+        bool antigravity = wxGetApp().app_config->get_bool("antigravity");
+        if (current_printer_technology() == ptSLA || (!antigravity && shift_z > SINKING_Z_THRESHOLD)) {
             const Vec3d shift(0.0, 0.0, -shift_z);
             m_selection.translate(i.first, i.second, shift);
             m->translate_instance(i.second, shift);
@@ -4076,7 +4101,7 @@ void GLCanvas3D::do_move(const std::string& snapshot_type)
     if (wipe_tower_origin != Vec3d::Zero())
         post_event(Vec3dEvent(EVT_GLCANVAS_WIPETOWER_MOVED, std::move(wipe_tower_origin)));
 
-    if (current_printer_technology() == ptFFF && fff_print()->config().complete_objects) {
+    if (current_printer_technology() == ptFFF && (fff_print()->config().complete_objects || fff_print()->config().parallel_objects)) {
         update_sequential_clearance(true);
         m_sequential_print_clearance.m_evaluating = true;
     }
@@ -6244,7 +6269,8 @@ void GLCanvas3D::_render_overlays()
         m_layers_editing.render_overlay(*this);
 
     const ConfigOptionBool* opt = dynamic_cast<const ConfigOptionBool*>(m_config->option("complete_objects"));
-    bool sequential_print = opt != nullptr && opt->value;
+    const ConfigOptionBool* opl = dynamic_cast<const ConfigOptionBool*>(m_config->option("parallel_objects"));
+    bool sequential_print = (opt != nullptr && opt->value) || (opl != nullptr && opl->value);
     std::vector<const ModelInstance*> sorted_instances;
     if (sequential_print) {
         for (ModelObject* model_object : m_model->objects)

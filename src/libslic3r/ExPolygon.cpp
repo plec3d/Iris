@@ -112,6 +112,14 @@ bool ExPolygon::contains(const Polylines &polylines) const
     return pl_out.empty();
 }
 
+bool ExPolygon::contains_h(const Point &point) const
+{
+    for (const Polygon &hole : this->holes)
+        if (hole.contains(point))
+            return true;
+    return false;
+}
+
 bool ExPolygon::contains(const Point &point, bool border_result /* = true */) const
 {
     if (! Slic3r::contains(contour, point, border_result))

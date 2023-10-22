@@ -67,6 +67,9 @@ void AppConfig::set_defaults()
         // Reset the empty fields to defaults.
         if (get("autocenter").empty())
             set("autocenter", "0");
+        // Allow objects to not be level
+        if (get("antigravity").empty())
+            set("antigravity", "0");
         // Disable background processing by default as it is not stable.
         if (get("background_processing").empty())
             set("background_processing", "0");
