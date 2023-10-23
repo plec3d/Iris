@@ -33,7 +33,7 @@ jobs:
       uses: actions/upload-artifact@v1.0.0
       with:
         name: rc_linux_gtk3.tar
-        path: build/PrusaSlicer.tar
+        path: build/Iris.tar
     - name: Upload appimage
       uses: actions/upload-artifact@v1.0.0
       with:
