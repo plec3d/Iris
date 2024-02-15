@@ -1,0 +1,1 @@
+build_win.bat -c Release -s app-dirty -r console -d "C:\Users\PLEC\PrusaSlicer-deps"
