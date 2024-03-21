@@ -1,3 +1,8 @@
+///|/ Copyright (c) Prusa Research 2016 - 2020 Vojtěch Bubník @bubnikv
+///|/ Copyright (c) Slic3r 2016 Alessandro Ranellucci @alranel
+///|/
+///|/ PrusaSlicer is released under the terms of the AGPLv3 or higher
+///|/
 #ifndef slic3r_Fill3DHoneycomb_hpp_
 #define slic3r_Fill3DHoneycomb_hpp_
 
@@ -23,7 +28,7 @@ protected:
 	    const FillParams                &params, 
 	    unsigned int                     thickness_layers,
 	    const std::pair<float, Point>   &direction, 
-        const Polyline                   &pedestal,
+        const Polyline                        pedestal,
 	    ExPolygon                 		 expolygon,
 	    Polylines                       &polylines_out) override;
 };

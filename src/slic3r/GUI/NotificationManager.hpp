@@ -64,6 +64,7 @@ enum class NotificationType
 	// Notification on the start of PrusaSlicer, when updates of system profiles are detected.
 	// Contains a hyperlink to execute installation of the new system profiles.
 	PresetUpdateAvailable,
+	PresetUpdateAvailableNewPrinter,
 //	LoadingFailed,
 	// Errors emmited by Print::validate
 	// difference from Slicing error is that they disappear not grey out at update_background_process
@@ -119,8 +120,8 @@ enum class NotificationType
 	SimplifySuggestion,
 	// Change of text will change font to similar one on.
 	UnknownFont,
-	// information about netfabb is finished repairing model (blocking proccess)
-	NetfabbFinished,
+	// information that repairing model finished (blocking proccess)
+	RepairFinished,
 	// Short meesage to fill space between start and finish of export
 	ExportOngoing,
 	// Progressbar of download from prusaslicer:// url
@@ -902,6 +903,13 @@ private:
 	const std::vector<NotificationData> basic_notifications = {
 	{NotificationType::Mouse3dDisconnected, NotificationLevel::RegularNotificationLevel, 10,  _u8L("3D Mouse disconnected.") },
 	{NotificationType::PresetUpdateAvailable, NotificationLevel::ImportantNotificationLevel, 20,  _u8L("Configuration update is available."),  _u8L("See more."),
+		[](wxEvtHandler* evnthndlr) {
+			if (evnthndlr != nullptr)
+				wxPostEvent(evnthndlr, PresetUpdateAvailableClickedEvent(EVT_PRESET_UPDATE_AVAILABLE_CLICKED));
+			return true;
+		}
+	},
+	{NotificationType::PresetUpdateAvailableNewPrinter, NotificationLevel::ImportantNotificationLevel, 20,  _u8L("Configuration update is available. Update contains new printer releases."),  _u8L("See more."),
 		[](wxEvtHandler* evnthndlr) {
 			if (evnthndlr != nullptr)
 				wxPostEvent(evnthndlr, PresetUpdateAvailableClickedEvent(EVT_PRESET_UPDATE_AVAILABLE_CLICKED));

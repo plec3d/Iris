@@ -2,7 +2,7 @@
 ///|/
 ///|/ PrusaSlicer is released under the terms of the AGPLv3 or higher
 ///|/
-#include <exception> 
+#include <exception>
 namespace Slic3r {
 
 class ConfigError : public Slic3r::RuntimeError { 

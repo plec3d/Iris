@@ -9,6 +9,9 @@
 #include <algorithm>
 
 #include "Point.hpp"
+#include "NonplanarFacet.hpp"
+#include "NonplanarSurface.hpp"
+#define NegativeNaN log(-1)
 
 namespace Slic3r {
 
@@ -71,6 +74,8 @@ public:
 	static const ColorRGB X()           { return { 0.75f, 0.0f, 0.0f }; }
 	static const ColorRGB Y()           { return { 0.0f, 0.75f, 0.0f }; }
 	static const ColorRGB Z()           { return { 0.0f, 0.0f, 0.75f }; }
+	std::string generate_mix_gcode(std::vector<std::string> mix_colors);
+	std::string check_mix_color(std::vector<std::string> mix_colors);
 };
 
 class ColorRGBA
@@ -190,7 +195,6 @@ unsigned int picking_encode(unsigned char r, unsigned char g, unsigned char b);
 // Produce an alpha channel checksum for the red green blue components. The alpha channel may then be used to verify, whether the rgb components
 // were not interpolated by alpha blending or multi sampling.
 unsigned char picking_checksum_alpha_channel(unsigned char red, unsigned char green, unsigned char blue);
-float calcRayDistRatio(const std::vector<ColorRGB>& mixing_colors, const ColorRGB& mixing_color, const ColorRGB& target);
 
 } // namespace Slic3r
 

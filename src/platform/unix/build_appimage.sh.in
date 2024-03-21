@@ -12,9 +12,9 @@ sed -i -e 's#././#././#g' ../prusa-slicer
 mv ../prusa-slicer AppRun
 chmod +x AppRun
 
-cp resources/icons/Iris_192px.png Iris.png
+cp resources/icons/PrusaSlicer_192px.png Iris.png
 mkdir -p usr/share/icons/hicolor/192x192/apps
-cp resources/icons/Iris_192px.png usr/share/icons/hicolor/192x192/apps/Iris.png
+cp resources/icons/PrusaSlicer_192px.png usr/share/icons/hicolor/192x192/apps/Iris.png
 cat <<EOF > Iris.desktop
 [Desktop Entry]
 Name=Iris

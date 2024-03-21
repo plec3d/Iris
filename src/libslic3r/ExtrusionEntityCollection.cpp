@@ -8,14 +8,13 @@
 ///|/
 #include "ExtrusionEntityCollection.hpp"
 #include "ShortestPath.hpp"
-#include "BoundingBox.hpp"
-#include "SVG.hpp"
 #include <algorithm>
 #include <cmath>
 #include <map>
 
 namespace Slic3r {
 
+#if 0
 void filter_by_extrusion_role_in_place(ExtrusionEntitiesPtr &extrusion_entities, ExtrusionRole role)
 {
 	if (role != ExtrusionRole::Mixed) {
@@ -27,6 +26,7 @@ void filter_by_extrusion_role_in_place(ExtrusionEntitiesPtr &extrusion_entities,
             last);
 	}
 }
+#endif
 
 ExtrusionEntityCollection::ExtrusionEntityCollection(const ExtrusionPaths &paths)
     : no_sort(false)
@@ -93,18 +93,6 @@ void ExtrusionEntityCollection::remove(size_t i)
     this->entities.erase(this->entities.begin() + i);
 }
 
-ExtrusionEntityCollection ExtrusionEntityCollection::chained_path_from(const ExtrusionEntitiesPtr& extrusion_entities, const Point &start_near, ExtrusionRole role)
-{
-	// Return a filtered copy of the collection.
-    ExtrusionEntityCollection out;
-    out.entities = filter_by_extrusion_role(extrusion_entities, role);
-	// Clone the extrusion entities.
-	for (auto &ptr : out.entities)
-		ptr = ptr->clone();
-	chain_and_reorder_extrusion_entities(out.entities, &start_near);
-    return out;
-}
-
 void ExtrusionEntityCollection::polygons_covered_by_width(Polygons &out, const float scaled_epsilon) const
 {
     for (const ExtrusionEntity *entity : this->entities)
@@ -160,19 +148,6 @@ double ExtrusionEntityCollection::min_mm3_per_mm() const
     for (const ExtrusionEntity *entity : this->entities)
     	min_mm3_per_mm = std::min(min_mm3_per_mm, entity->min_mm3_per_mm());
     return min_mm3_per_mm;
-}
-
-void ExtrusionEntityCollection::export_to_svg(const char *path) const
-{
-    BoundingBox bbox;
-    for (const ExtrusionEntity *entity : this->entities)
-        bbox.merge(get_extents(entity->as_polylines()));
-
-    SVG svg(path, bbox);
-    for (const ExtrusionEntity *entity : this->entities)
-        svg.draw(entity->as_polylines(), "black", scale_(0.1f));
-
-    svg.Close(); 
 }
 
 }

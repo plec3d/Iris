@@ -245,14 +245,14 @@ bool get_handle_from_devinst(DEVINST devinst, HANDLE& handle)
 	dev_id_wstr = std::regex_replace(dev_id_wstr, std::wregex(LR"(\\)"), L"#"); // '\' is special for regex
 	dev_id_wstr = std::regex_replace(dev_id_wstr, std::wregex(L"^"), LR"(\\?\)", std::regex_constants::format_first_only);
 	dev_id_wstr = std::regex_replace(dev_id_wstr, std::wregex(L"$"), L"#", std::regex_constants::format_first_only);
-	
+
 	// guid
 	wchar_t			guid_wchar[64];//guid is 32 chars+4 hyphens+2 paranthesis+null => 64 should be more than enough
 	StringFromGUID2(GUID_DEVINTERFACE_USB_HUB, guid_wchar, 64);
 	dev_id_wstr.append(guid_wchar);
 
 	// get handle
-	std::wstring&	usb_hub_path = dev_id_wstr; 
+	std::wstring&	usb_hub_path = dev_id_wstr;
 	handle = CreateFileW(usb_hub_path.c_str(), GENERIC_WRITE, FILE_SHARE_WRITE, NULL, OPEN_EXISTING, 0, NULL);
 	if (handle == INVALID_HANDLE_VALUE) {
 		// Sometimes device is not GUID_DEVINTERFACE_USB_HUB, than we need to check parent recursively
@@ -332,7 +332,7 @@ bool is_card_reader(HDEVINFO h_dev_info, SP_DEVINFO_DATA& spdd)
 		BOOST_LOG_TRIVIAL(warning) << "is_card_reader failed: Couldn't get configuration string descriptor.";
 		return false;
 	}
-	
+
 	// Final compare.
 	BOOST_LOG_TRIVIAL(error) << "Ejecting information: Retrieved configuration string: " << configuration_string;
 	if (configuration_string.find(L"CARD READER") != std::wstring::npos) {
@@ -529,7 +529,7 @@ void eject_alt(std::string path, wxEvtHandler* callback_evt_handler, DriveData d
 	std::wstring wpath = std::wstring();
 	wpath += boost::nowide::widen(path)[0]; // drive letter wide
 	wpath[0] &= ~0x20; // make sure drive letter is uppercase
-	std::wstring volume_access_path = L"\\\\.\\" + wpath + L":"; // for CreateFile			
+	std::wstring volume_access_path = L"\\\\.\\" + wpath + L":"; // for CreateFile
 
 	HANDLE handle = CreateFileW(volume_access_path.c_str(), GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_EXISTING, 0, nullptr);
 	if (handle == INVALID_HANDLE_VALUE) {
@@ -571,7 +571,7 @@ void eject_alt(std::string path, wxEvtHandler* callback_evt_handler, DriveData d
 	}
 	BOOST_LOG_TRIVIAL(info) << "Alt Ejecting: FSCTL_DISMOUNT_VOLUME success.";
 
-	// some implemenatations also calls IOCTL_STORAGE_MEDIA_REMOVAL here with FALSE as third parameter, which should set PreventMediaRemoval 
+	// some implemenatations also calls IOCTL_STORAGE_MEDIA_REMOVAL here with FALSE as third parameter, which should set PreventMediaRemoval
 	BOOL error = DeviceIoControl(handle, IOCTL_STORAGE_EJECT_MEDIA, nullptr, 0, nullptr, 0, &deviceControlRetVal, nullptr);
 	if (error == 0) {
 		CloseHandle(handle);
@@ -1095,4 +1095,11 @@ void RemovableDriveManager::eject_thread_finish()
 }
 #endif // __APPLE__
 
+std::vector<DriveData> RemovableDriveManager::get_drive_list()
+{
+	{
+		std::lock_guard<std::mutex> guard(m_drives_mutex);
+		return m_current_drives;
+	}
+}
 }} // namespace Slic3r::GUI

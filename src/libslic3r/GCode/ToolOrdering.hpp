@@ -154,7 +154,7 @@ public:
     // For a multi-material print, the printing extruders are ordered in the order they shall be primed.
     const std::vector<unsigned int>& all_extruders() const { return m_all_printing_extruders; }
     const std::map<std::tuple<float,int,int>,float>& all_purge_volumes() const { return m_layer_wipe_volumes;}
-
+    
     // Find LayerTools with the closest print_z.
     const LayerTools&	tools_for_layer(coordf_t print_z) const;
     LayerTools&			tools_for_layer(coordf_t print_z) { return const_cast<LayerTools&>(std::as_const(*this).tools_for_layer(print_z)); }
@@ -176,7 +176,7 @@ private:
     void                mark_skirt_layers(const PrintConfig &config, coordf_t max_layer_height);
     void 				collect_extruder_statistics(bool prime_multi_material);
     void                calculate_wipe_volumes(const Print &print);
-    
+
     std::vector<LayerTools>    m_layer_tools;
     // First printing extruder, including the multi-material priming sequence.
     unsigned int               m_first_printing_extruder = (unsigned int)-1;
@@ -186,7 +186,7 @@ private:
     std::vector<unsigned int>  m_all_printing_extruders;
     // A map of required purge volumes, old tool->new. Key is layer_z,old E, New E
     std::map<std::tuple<float,int,int>,float> m_layer_wipe_volumes;
-    
+
     const PrintConfig*         m_print_config_ptr = nullptr;
 };
 

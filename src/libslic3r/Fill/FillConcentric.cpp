@@ -20,7 +20,7 @@ void FillConcentric::_fill_surface_single(
     const FillParams                &params,
     unsigned int                     thickness_layers,
     const std::pair<float, Point>   &direction,
-    const Polyline                   &pedestal,
+              const Polyline                        pedestal,
     ExPolygon                        expolygon,
     Polylines                       &polylines_out)
 {
@@ -75,7 +75,7 @@ void FillConcentric::_fill_surface_single(
 void FillConcentric::_fill_surface_single(const FillParams              &params,
                                           unsigned int                   thickness_layers,
                                           const std::pair<float, Point> &direction,
-                                          const Polyline                &pedestal,
+              const Polyline                        pedestal,
                                           ExPolygon                      expolygon,
                                           ThickPolylines                &thick_polylines_out)
 {

@@ -27,6 +27,7 @@
 #include "slic3r/GUI/Gizmos/GLGizmoMmuSegmentation.hpp"
 #include "slic3r/GUI/Gizmos/GLGizmoSimplify.hpp"
 #include "slic3r/GUI/Gizmos/GLGizmoEmboss.hpp"
+#include "slic3r/GUI/Gizmos/GLGizmoSVG.hpp"
 #include "slic3r/GUI/Gizmos/GLGizmoMeasure.hpp"
 
 #include "libslic3r/format.hpp"
@@ -114,6 +115,7 @@ bool GLGizmosManager::init()
     m_gizmos.emplace_back(new GLGizmoMmuSegmentation(m_parent, "mmu_segmentation.svg", 9));
     m_gizmos.emplace_back(new GLGizmoMeasure(m_parent, "measure.svg", 10));
     m_gizmos.emplace_back(new GLGizmoEmboss(m_parent));
+    m_gizmos.emplace_back(new GLGizmoSVG(m_parent));
     m_gizmos.emplace_back(new GLGizmoSimplify(m_parent));
 
     m_common_gizmos_data.reset(new CommonGizmosDataPool(&m_parent));
@@ -140,6 +142,10 @@ bool GLGizmosManager::init_arrow(const std::string& filename)
 
     const std::string path = resources_dir() + "/icons/";
     return (!filename.empty()) ? m_arrow_texture.load_from_svg_file(path + filename, false, false, false, 512) : false;
+}
+float GLGizmosManager::get_layout_scale()
+{
+    return m_layout.scale;
 }
 
 void GLGizmosManager::set_overlay_icon_size(float size)
@@ -656,6 +662,39 @@ bool GLGizmosManager::on_key(wxKeyEvent& evt)
             if (simplify != nullptr) 
                 processed = simplify->on_esc_key_down();
         }
+        // BBS
+        /*else if (m_current == MmuSegmentation) {
+            GLGizmoMmuSegmentation* mmu_seg = dynamic_cast<GLGizmoMmuSegmentation*>(get_current());
+            if (mmu_seg != nullptr) {
+                if (keyCode == 'B' || keyCode == 'S' || keyCode == 'U' || keyCode == 'G') {
+                    processed = mmu_seg->on_key_down_select_tool_type(keyCode);
+                    if (processed) {
+                        // force extra frame to automatically update window size
+                        wxGetApp().imgui()->set_requires_extra_frame();
+                    }
+                }
+            }
+        }*/
+        else if (m_current == FdmSupports) {
+            GLGizmoFdmSupports* fdm_support = dynamic_cast<GLGizmoFdmSupports*>(get_current());
+            if (fdm_support != nullptr && keyCode == 'F' || keyCode == 'S' || keyCode == 'C' || keyCode == 'G') {
+                //processed = fdm_support->on_key_down_select_tool_type(keyCode);
+            }
+            if (processed) {
+                // force extra frame to automatically update window size
+                wxGetApp().imgui()->set_requires_extra_frame();
+            }
+        }
+        else if (m_current == Seam) {
+            GLGizmoSeam* seam = dynamic_cast<GLGizmoSeam*>(get_current());
+            if (seam != nullptr && keyCode == 'S' || keyCode == 'C') {
+               // processed = seam->on_key_down_select_tool_type(keyCode);
+            }
+            if (processed) {
+                // force extra frame to automatically update window size
+                wxGetApp().imgui()->set_requires_extra_frame();
+            }
+        }
         else if (m_current == Measure) {
             if (keyCode == WXK_CONTROL)
                 gizmo_event(SLAGizmoEventType::CtrlDown, Vec2d::Zero(), evt.ShiftDown(), evt.AltDown(), evt.CmdDown());
@@ -688,6 +727,14 @@ void GLGizmosManager::render_background(float left, float top, float right, floa
         const float inv_tex_width = (tex_width != 0.0f) ? 1.0f / tex_width : 0.0f;
         const float inv_tex_height = (tex_height != 0.0f) ? 1.0f / tex_height : 0.0f;
 
+        const float internal_left_uv   = float(m_background_texture.metadata.left) * inv_tex_width;
+        const float internal_right_uv  = 1.0f - float(m_background_texture.metadata.right) * inv_tex_width;
+        const float internal_top_uv    = 1.0f - float(m_background_texture.metadata.top) * inv_tex_height;
+        const float internal_bottom_uv = float(m_background_texture.metadata.bottom) * inv_tex_height;
+
+        GLTexture::render_sub_texture(tex_id, left, right, bottom, top, { { internal_left_uv, internal_bottom_uv }, { internal_right_uv, internal_bottom_uv }, { internal_right_uv, internal_top_uv }, { internal_left_uv, internal_top_uv } });
+
+        
         const float internal_left   = left + border_w;
         const float internal_right  = right - border_w;
         const float internal_top    = top - border_h;
@@ -697,11 +744,6 @@ void GLGizmosManager::render_background(float left, float top, float right, floa
         const float right_uv = 1.0f;
         const float top_uv = 1.0f;
         const float bottom_uv = 0.0f;
-
-        const float internal_left_uv   = float(m_background_texture.metadata.left) * inv_tex_width;
-        const float internal_right_uv  = 1.0f - float(m_background_texture.metadata.right) * inv_tex_width;
-        const float internal_top_uv    = 1.0f - float(m_background_texture.metadata.top) * inv_tex_height;
-        const float internal_bottom_uv = float(m_background_texture.metadata.bottom) * inv_tex_height;
 
         // top-left corner
         GLTexture::render_sub_texture(tex_id, left, internal_left, internal_top, top, { { internal_left_uv, internal_bottom_uv }, { internal_right_uv, internal_bottom_uv }, { internal_right_uv, internal_top_uv }, { internal_left_uv, internal_top_uv } });
@@ -1026,6 +1068,33 @@ bool GLGizmosManager::is_hiding_instances() const
     return (m_common_gizmos_data
          && m_common_gizmos_data->instances_hider()
          && m_common_gizmos_data->instances_hider()->is_valid());
+}
+
+std::string get_name_from_gizmo_etype(GLGizmosManager::EType type)
+{
+    switch (type) {
+    case GLGizmosManager::EType::Move:
+        return "Move";
+    case GLGizmosManager::EType::Rotate:
+        return "Rotate";
+    case GLGizmosManager::EType::Scale:
+        return "Scale";
+    case GLGizmosManager::EType::Flatten:
+        return "Flatten";
+    case GLGizmosManager::EType::Cut:
+        return "Cut";
+    case GLGizmosManager::EType::FdmSupports:
+        return "FdmSupports";
+    case GLGizmosManager::EType::Seam:
+        return "Seam";
+    case GLGizmosManager::EType::Emboss:
+        return "Text";
+    case GLGizmosManager::EType::MmuSegmentation:
+        return "Color Painting";
+    default:
+        return "";
+    }
+    return "";
 }
 
 } // namespace GUI

@@ -2,8 +2,8 @@
 ///|/
 ///|/ PrusaSlicer is released under the terms of the AGPLv3 or higher
 ///|/
-#ifndef WipeTower_
-#define WipeTower_
+#ifndef slic3r_GCode_WipeTower_hpp_
+#define slic3r_GCode_WipeTower_hpp_
 
 #include <cmath>
 #include <string>
@@ -264,7 +264,8 @@ private:
 
 
 	bool   m_semm               = true; // Are we using a single extruder multimaterial printer?
-    Vec2f  m_wipe_tower_pos; 			// Left front corner of the wipe tower in mm.
+    bool   m_hidden 			= true;
+	Vec2f  m_wipe_tower_pos; 			// Left front corner of the wipe tower in mm.
 	float  m_wipe_tower_width; 			// Width of the wipe tower.
 	float  m_wipe_tower_depth 	= 0.f; 	// Depth of the wipe tower
 	float  m_wipe_tower_height  = 0.f;
@@ -283,8 +284,6 @@ private:
 	float  m_perimeter_speed    = 0.f;
     float  m_first_layer_speed  = 0.f;
     size_t m_first_layer_idx    = size_t(-1);
-	float  m_speed              = 0.f;  // Wipe tower speed in mm/s.
-	float  m_wipe_starting_speed = 0.f; // Starting speed during wipe, up to m_speed.
 
 	// G-code generator parameters.
     float           m_cooling_tube_retraction   = 0.f;
@@ -417,4 +416,4 @@ private:
 
 } // namespace Slic3r
 
-#endif // WipeTowerPrusaMM_hpp_ 
+#endif // slic3r_GCode_WipeTower_hpp_

@@ -12,94 +12,102 @@
 
 namespace ObjParser {
 
-struct ObjVertex
-{
-	int coordIdx;
-	int textureCoordIdx;
-	int normalIdx;
-};
-
-inline bool operator==(const ObjVertex &v1, const ObjVertex &v2)
-{
-	return 
-		v1.coordIdx			== v2.coordIdx			&& 
-		v1.textureCoordIdx	== v2.textureCoordIdx	&& 
-		v1.normalIdx		== v2.normalIdx;
-}
-
 struct ObjUseMtl
 {
 	int			vertexIdxFirst;
+	int			normalIdxFirst;
+	int			textureIdxFirst;
+
 	std::string name;
 };
 
 inline bool operator==(const ObjUseMtl &v1, const ObjUseMtl &v2)
 {
 	return 
-		v1.vertexIdxFirst	== v2.vertexIdxFirst	&& 
+		v1.vertexIdxFirst	== v2.vertexIdxFirst	&&
+		v1.normalIdxFirst	== v2.normalIdxFirst	&&
+		v1.textureIdxFirst	== v2.textureIdxFirst	&&
 		v1.name.compare(v2.name) == 0;
 }
 
 struct ObjObject
 {
+	int			coordIdxFirst;
 	int			vertexIdxFirst;
+	int			normalIdxFirst;
+	int			textureIdxFirst;
 	std::string name;
 };
 
 inline bool operator==(const ObjObject &v1, const ObjObject &v2)
 {
 	return 
-		v1.vertexIdxFirst	== v2.vertexIdxFirst	&& 
+		v1.vertexIdxFirst	== v2.vertexIdxFirst	&&
+		v1.normalIdxFirst	== v2.normalIdxFirst	&&
+		v1.textureIdxFirst	== v2.textureIdxFirst	&& 
 		v1.name.compare(v2.name) == 0;
 }
 
 struct ObjGroup
 {
+	int			coordIdxFirst;
 	int			vertexIdxFirst;
+	int			normalIdxFirst;
+	int			textureIdxFirst;
 	std::string name;
 };
 
 inline bool operator==(const ObjGroup &v1, const ObjGroup &v2)
 {
 	return 
-		v1.vertexIdxFirst	== v2.vertexIdxFirst	&& 
+		v1.coordIdxFirst	== v2.coordIdxFirst	&& 
+		v1.vertexIdxFirst	== v2.vertexIdxFirst	&&
+		v1.normalIdxFirst	== v2.normalIdxFirst	&&
+		v1.textureIdxFirst	== v2.textureIdxFirst	&&
 		v1.name.compare(v2.name) == 0;
 }
 
 struct ObjSmoothingGroup
 {
 	int			vertexIdxFirst;
+	int			normalIdxFirst;
+	int			textureIdxFirst;
 	int			smoothingGroupID;
 };
 
 inline bool operator==(const ObjSmoothingGroup &v1, const ObjSmoothingGroup &v2)
 {
 	return 
-		v1.vertexIdxFirst	== v2.vertexIdxFirst	&& 
+		v1.vertexIdxFirst	== v2.vertexIdxFirst	&&
+		v1.normalIdxFirst	== v2.normalIdxFirst	&&
+		v1.textureIdxFirst	== v2.textureIdxFirst	&&
 		v1.smoothingGroupID == v2.smoothingGroupID;
 }
 
 struct ObjData {
 	// Version of the data structure for load / store in the private binary format.
 	int								version;
-
-	// x, y, z, w
-	std::vector<float>				coordinates;
-	// u, v, w
-	std::vector<float>				textureCoordinates;
 	// x, y, z
-	std::vector<float>				normals;
+	std::vector<Slic3r::Vec3f>				coordinates;
+	// x, y, z
+	std::vector<Slic3r::Vec3f>				colors;
 	// u, v, w
-	std::vector<float>				parameters;
+	std::vector<Slic3r::Vec3f>				textureCoordinates;
+	// x, y, z
+	std::vector<Slic3r::Vec3f>				normals;
+	// u, v, w
+	std::vector<Slic3r::Vec3f>				parameters;
 
 	std::vector<std::string>		mtllibs;
 	std::vector<ObjUseMtl>			usemtls;
 	std::vector<ObjObject>			objects;
 	std::vector<ObjGroup>			groups;
 	std::vector<ObjSmoothingGroup>	smoothingGroups;
-
+	std::vector<bool>				is_quad;
 	// List of faces, delimited by an ObjVertex with all members set to -1.
-	std::vector<ObjVertex>			vertices;
+	std::vector<Slic3r::Vec3i>			faces;
+	std::vector<Slic3r::Vec3i>			face_normals;
+	std::vector<Slic3r::Vec3i>			face_texts;
 };
 
 extern bool objparse(const char *path, ObjData &data);

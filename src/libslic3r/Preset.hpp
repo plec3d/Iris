@@ -630,6 +630,7 @@ namespace PresetUtils {
     std::string system_printer_bed_model(const Preset& preset);
     std::string system_printer_bed_texture(const Preset& preset);
     bool        vendor_profile_has_all_resources(const VendorProfile& vp);
+    bool        compare_vendor_profile_printers(const VendorProfile& vp_old, const VendorProfile& vp_new, std::vector<std::string>& new_printers);
 } // namespace PresetUtils
 
 
@@ -927,7 +928,7 @@ private:
         size_t i_compatible = n;
         int    match_quality = -1;
         for (; i < n; ++i)
-            // Since we use the filament selection from Wizard, it's needed to control the preset visibility too 
+            // Since we use the filament selection from Wizard, it's needed to control the preset visibility too
             if (m_extr_filaments[i].is_compatible && m_filaments->preset(i).is_visible) {
                 int this_match_quality = prefered_condition(*(m_extr_filaments[i].preset));
                 if (this_match_quality > match_quality) {

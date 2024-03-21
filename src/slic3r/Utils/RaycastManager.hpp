@@ -21,12 +21,12 @@ namespace Slic3r::GUI{
 class RaycastManager
 {
 // Public structures used by RaycastManager
-public: 
+public:
 
     //                   ModelVolume.id
     using Mesh = std::pair<size_t, std::unique_ptr<AABBMesh> >;
     using Meshes = std::vector<Mesh>;
-    
+
     // Key for transformation consist of unique volume and instance id ... ObjectId()
     //                 ModelInstance, ModelVolume
     using TrKey = std::pair<size_t, size_t>;
@@ -49,7 +49,7 @@ public:
     };
 
     // TODO: it is more general object move outside of this class
-    template<typename T> 
+    template<typename T>
     struct SurfacePoint {
         using Vec3 = Eigen::Matrix<T, 3, 1, Eigen::DontAlign>;
         Vec3 position = Vec3::Zero();
@@ -60,7 +60,7 @@ public:
     {
         TrKey tr_key;
         double squared_distance;
-    };    
+    };
 
     struct ClosePoint
     {
@@ -170,6 +170,14 @@ std::optional<RaycastManager::Hit> ray_from_camera(const RaycastManager        &
                                                    const Vec2d                 &mouse_pos,
                                                    const Camera                &camera,
                                                    const RaycastManager::ISkip *skip);
+
+/// <summary>
+/// Create condition to allowe only parts from volumes without one given
+/// </summary>
+/// <param name="volumes">List of allowed volumes included one which is dissalowed and non parts</param>
+/// <param name="disallowed_volume_id">Disallowed volume</param>
+/// <returns>Condition</returns>
+RaycastManager::AllowVolumes create_condition(const ModelVolumePtrs &volumes, const ObjectID &disallowed_volume_id);
 
 } // namespace Slic3r::GUI
 

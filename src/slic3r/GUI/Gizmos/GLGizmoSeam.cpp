@@ -214,7 +214,7 @@ void GLGizmoSeam::update_model_object() const
 
 
 
-void GLGizmoSeam::update_from_model_object()
+void GLGizmoSeam::update_from_model_object(bool first_update)
 {
     wxBusyCursor wait;
 

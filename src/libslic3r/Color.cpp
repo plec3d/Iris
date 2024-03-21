@@ -4,17 +4,13 @@
 ///|/
 #include "libslic3r.h"
 #include "Color.hpp"
-#include "AABBMesh.hpp"
-#include "boost/lexical_cast.hpp"
+#include <boost/log/trivial.hpp>
+
 #include <random>
+#include <algorithm>
+#include <vector>
 
 static const float INV_255 = 1.0f / 255.0f;
-
-template<typename BidiIt>
-bool next_partial_permutation(BidiIt first, BidiIt middle, BidiIt last) {
-  std::reverse(middle, last);
-  return std::next_permutation(first, last);
-}
 
 namespace Slic3r {
 
@@ -36,7 +32,7 @@ static void RGBtoHSV(float r, float g, float b, float& h, float& s, float& v)
 			h = 60.0f * (std::fmod(((g - b) / delta), 6.0f));
 		else if (max_comp == g)
 			h = 60.0f * (((b - r) / delta) + 2.0f);
-		else if (max_comp == b)
+		else  // max_comp == b
 			h = 60.0f * (((r - g) / delta) + 4.0f);
 
 		s = (max_comp > 0.0f) ? delta / max_comp : 0.0f;
@@ -294,7 +290,7 @@ ColorRGB opposite(const ColorRGB& color)
 ColorRGB opposite(const ColorRGB& a, const ColorRGB& b)
 {
 	float ha, sa, va;
-	RGBtoHSV(a.r(), a.g(), a.b(), ha, sa, va);
+	RGBtoHSV(a.r(), a.g() , a.b(), ha, sa, va);
 	float hb, sb, vb;
 	RGBtoHSV(b.r(), b.g(), b.b(), hb, sb, vb);
 
@@ -415,99 +411,170 @@ unsigned char picking_checksum_alpha_channel(unsigned char red, unsigned char gr
 	return b;
 }
 
-ColorRGB calc_midpoint(std::vector<ColorRGB> colors){
-	float sum_R = 0;
-	float sum_G = 0;
-	float sum_B = 0;
-	for(ColorRGB color: colors){
-		sum_R += color.r();
-		sum_G += color.g();
-		sum_B += color.b();
-	}
-	return ColorRGB(sum_R/colors.size(),sum_G/colors.size(),sum_B/colors.size());
-}
-
-bool lies_in_same_direction(ColorRGB midpoint, ColorRGB opposite, ColorRGB target){
-	return ((opposite.r() - midpoint.r()) / (opposite.r() - midpoint.r()) ==  
-			(target.r() - midpoint.r()) / (target.r() - midpoint.r()) &&
-			(opposite.g() - midpoint.g()) / (opposite.g() - midpoint.g()) ==  
-			(target.g() - midpoint.g()) / (target.g() - midpoint.g()) &&
-			(opposite.b() - midpoint.b()) / (opposite.b() - midpoint.b()) ==  
-			(target.b() - midpoint.b()) / (target.b() - midpoint.b()));
-}
-
-// checks the boundaries touching the color, if indeed reached the boundary or no color return true, else return false
-bool is_within_colorspace_boundaries(std::vector<ColorRGB> mixing_colors, ColorRGB target_color){
-	// loop each mixing color and get its needed ratio
-	for(const ColorRGB& color: mixing_colors)
-		if (calcRayDistRatio(mixing_colors, color, target_color) == -1)
-			return false;
-
-	return true;
-}
-
-float compare_color_brightness(ColorRGB& color_a, ColorRGB& color_b){
-	return color_a.r() + color_a.g() + color_a.b() < color_b.r() + color_b.g() + color_b.b();
-}
-
-float calc_distance(ColorRGB color_a, ColorRGB color_b){
-	float dist = std::sqrt(std::pow(color_b.r()-color_a.r(),2)+std::pow(color_b.g()-color_a.g(),2)+std::pow(color_b.b()-color_a.b(),2));
-	return dist;
-}
-
-float calcRayDistRatio(const std::vector<ColorRGB>& mixing_colors, const ColorRGB& mixing_color, const ColorRGB& target){
-
-  // load the colors to triangles
-  indexed_triangle_set its;
-  for(int i =0; i<mixing_colors.size()-1;i++)
-		its.vertices.push_back({mixing_colors[0].r(),mixing_colors[0].g(),mixing_colors[0].b()});
-
-  // load the triangle(s)
-  if(mixing_colors.size()>3){
-	// get all permutations
-	std::vector<int> permindices;
-	for(int i = 0;i < mixing_colors.size();i++)
-		permindices.push_back(i);
-	do 	// use the permutation
-		its.indices.push_back({permindices[0],permindices[1],permindices[2]});
-	// make a permutation of size 3
-    while(next_partial_permutation(permindices.begin(), permindices.begin() + 3, permindices.end()));
-  }else
-	its.indices.push_back({1,2,(mixing_colors.size()==3?3:1)});
-
-  // init the Mesh
-  AABBMesh AM = AABBMesh(its, 0.01);
-  
-  // make s and dir
-  Vec3d s = {target.r(),target.g(),target.b()};
-  Vec3d src = {mixing_color.r(),mixing_color.g(),mixing_color.b()};
-  Vec3d dir = Vec3d(s - src);
-
-  AABBMesh::hit_result hit = AM.query_ray_hit(s, dir);
-  if(hit.is_hit())
-	return calc_distance(mixing_color, target)/hit.distance();
-
-  return -1;
-}
-
-std::string generate_mixing_color(const std::vector<ColorRGB> mixing_colors, const ColorRGB target_color)
+Vec3f get_printable_color(std::map<int, NonplanarFacet> &triangles, Vec3f color)
 {
-	std::string out = "M165";
-	std::vector<float> ratios;
-	std::string tools = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
-
-	// loop each mixing color and get its needed ratio
+	float mindist = 100000000.;
+	std::pair<float,Vec3f> result;
+	Vec3f new_color;
+	//std::cout << "Ray point X:" << triangles[1].vertex->x()<< " Y:" << triangles[1].vertex->y()<< " Z:" << triangles[1].vertex->z()<< "\n";
+	// find the closest point on the closest triangle of the borders
 	int i = 0;
-	for(const ColorRGB& color: mixing_colors){
-		float dist = calcRayDistRatio(mixing_colors, color, target_color);
-		if(dist < 0) return "";
-		ratios.push_back(dist);
-        
-		// build a string with each
-		out += " " + tools[i++] + boost::lexical_cast<std::string>(dist);
+	int triangle_id = -1;
+	Vec3f total_midpoint = Vec3f(0.,0.,0.);
+	for(auto &facet:triangles){
+		result = facet.second.find_closest_point(color);
+		if(result.first < mindist){
+			//std::cout << "Ray point dist:"<< result.first << " X:" << result.second.x()<< " Y:" << result.second.y()<< " Z:" << result.second.z()<< "\n";
+			mindist = result.first;
+			new_color = result.second;
+			triangle_id = i;
+		}
+		// calc the triangles total midpoint
+		total_midpoint += (facet.second.vertex[0]+facet.second.vertex[1]+facet.second.vertex[2])/3.;
+		i++;
+	}
+	if(triangle_id == -1) return color;
+	
+	total_midpoint /= triangles.size();
+
+	// calc each triangles midpoint
+	//Vec3f triangle_midpoint = (triangles[triangle_id].vertex[0]+triangles[triangle_id].vertex[1]+triangles[triangle_id].vertex[2])/3.;
+	
+	// return the new point/color if the dist to total midpoint is bigger than total midpoint to triangle midpoint
+	return (total_midpoint - color).norm()>(total_midpoint - new_color).norm()*1.3?new_color:color;
+}
+
+std::string ColorRGB::check_mix_color(std::vector<std::string> mix_colors)
+{
+	const ColorRGB tgt_color = *this;
+	Vec3f tgt = Vec3f(tgt_color.r(),tgt_color.g(),tgt_color.b());
+	
+	std::vector<ColorRGB> mixes;
+	decode_colors(mix_colors, mixes);
+	// check if the color is not exactly equal to a mixer color
+	for(ColorRGB & mix: mixes)
+		if(mix == tgt_color) return encode_color(mix);
+	//std::cout << "Color point X:" << mixes[0].r()<< " Y:" << mixes[0].g()<< " Z:" << mixes[0].b()<< "\n";
+	std::map<int, NonplanarFacet> triangles;
+	std::vector<int> indices;
+	int n = mixes.size();
+	std::vector<bool> v(n);
+    for (int i = 0; i < n; ++i) {
+        v[i] = (i >= (n - 3));
+    }
+
+    do {
+        for (int i = 0; i < n; ++i) {
+            if (v[i]) {
+               indices.push_back(i);
+            }
+        }
+    } while (std::next_permutation(v.begin(), v.end()));
+	//std::cout << "Indices point X:" << std::to_string(indices[0]) << " Y:" << std::to_string(indices[1]) << " Z:" << std::to_string(indices[2]) << "\n";
+	int j = 0;
+	for(int i = 0;i < indices.size(); i+=3){
+		NonplanarFacet new_facet;// = new NonplanarFacet();
+		new_facet.vertex[0] = {mixes[indices[i]].r(),mixes[indices[i]].g(),mixes[indices[i]].b()};
+		new_facet.vertex[1] = {mixes[indices[i+1]].r(),mixes[indices[i+1]].g(),mixes[indices[i+1]].b()};
+		new_facet.vertex[2] = {mixes[indices[i+2]].r(),mixes[indices[i+2]].g(),mixes[indices[i+2]].b()};
+		triangles.emplace(j++,new_facet);
 	}
 
-	return out;
+	// check if the color is inside the available color space
+	tgt = get_printable_color(triangles, tgt);
+
+	return encode_color(ColorRGB(tgt.x(),tgt.y(),tgt.z()));	
+}
+
+std::string ColorRGB::generate_mix_gcode(std::vector<std::string> mix_colors)
+{
+	const ColorRGB tgt_color = *this;
+	Vec3f tgt = Vec3f(tgt_color.r(),tgt_color.g(),tgt_color.b());
+
+	std::vector<ColorRGB> mixes;
+	decode_colors(mix_colors, mixes);
+	std::map<int, NonplanarFacet> triangles;
+	std::vector<int> indices;
+	int n = mixes.size();
+	std::vector<bool> v(n);
+	for(int i = 0; i < mixes.size();i++)
+		v.push_back(i);
+
+	
+    for (int i = 0; i < n; ++i)
+        v[i] = (i >= (n - 3));
+ 
+    do {
+        for (int i = 0; i < n; ++i) {
+            if (v[i]) {
+                indices.push_back(i);
+            }
+        }
+    } while (std::next_permutation(v.begin(), v.end()));
+	int j = 0;
+	for(int i = 0;i < indices.size(); i+=3){
+		NonplanarFacet new_facet;// = new NonplanarFacet();
+		new_facet.vertex[0] = {mixes[indices[i]].r(),mixes[indices[i]].g(),mixes[indices[i]].b()};
+		new_facet.vertex[1] = {mixes[indices[i+1]].r(),mixes[indices[i+1]].g(),mixes[indices[i+1]].b()};
+		new_facet.vertex[2] = {mixes[indices[i+2]].r(),mixes[indices[i+2]].g(),mixes[indices[i+2]].b()};
+		triangles.emplace(j++,new_facet);
+	}
+	NonplanarSurface surf(triangles);
+	// calc ratios
+	// ray trace each mix color and get the right ratio for each mix color
+	std::vector<float> raydists;
+	std::vector<float> dists;
+	std::vector<float> dists_sortable;
+	float mincolmaxval = 1.;
+	std::vector<float> maxvals = {0.};
+	for(ColorRGB& mix: mixes){
+		Vec3f dir = tgt + tgt.cross(Vec3f(mix.r(),mix.g(),mix.b())) * 10.;
+		std::vector<Vec3f> dirs;
+		dirs.push_back(dir);
+		std::vector<IntersectInfo> hits = surf.intersect_rays(tgt,dirs);
+		// find the smallest dist and use store it
+		if(hits.size()>0){
+			std::sort(hits.begin(), hits.end(),
+              [](const auto &i1, const auto &i2) {
+		  		return i2.distance > 0 && i2.bIntersect && i1.distance < i2.distance || i1.distance < 0 || !i1.bIntersect;
+              });
+			//std::cout <<" Y:" << hits[0].distance<< "\n"; 
+		 	if(hits[0].distance>=0.) raydists.push_back(hits[0].distance);
+		}
+		dists.push_back((tgt - Vec3f(mix.r(),mix.g(),mix.b())).norm());
+		//dists_sortable.push_back((tgt - Vec3f(mix.r(),mix.g(),mix.b())).norm());
+		if (std::max(mix.r(),std::max(mix.g(),mix.b())) < mincolmaxval)
+			mincolmaxval = std::max(mix.r(),std::max(mix.g(),mix.b()));
+		if((tgt - Vec3f(mix.r(),mix.g(),mix.b())).norm()>maxvals[maxvals.size()-1])
+			maxvals.push_back((tgt - Vec3f(mix.r(),mix.g(),mix.b())).norm());
+	}
+	auto above_zero = [](const float in) {
+		return in<=0.?0.:in;
+		};
+	// build the ratios
+	//std::sort(dists_sortable.begin(), dists_sortable.end());
+	//float maxval = dists_sortable[dists_sortable.size()-2];
+	std::vector<float> ratios;
+	int i = 0;
+	float sumratios = 0;
+	for(float dist: dists){
+		ratios.push_back(std::abs(dist==0? 1. : (1.-above_zero(std::max(raydists[i],dist*(float).99))/maxvals[maxvals.size()-1])));//std::min(360. if mincolmaxval>10 else 255. ,max(dists))
+		sumratios += ratios[ratios.size()-1];
+		i++;
+	}
+	//std::cout << "Ray point X:" << tgt_color.r()<< " Y:" << tgt_color.g()<< " Y:" << tgt_color.b()<< "\n";
+	//std::cout << "Ray point X:" << sumratios << " Y:" << ratios.at(0)<< " Y:" << ratios.at(1)<< " Y:" << ratios.at(2)<< " Y:" << ratios.at(3)<< "\n";
+	std::string gcode = "M165 ";
+	std::string toolnrs = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+	i = 0;
+	for(float ratio: ratios){
+		// level out the ratios and export to gcode
+		char rat[16];
+		snprintf(rat,16, "%.2f ",(ratio>0.?ratio:0.00001)/sumratios);
+		gcode += toolnrs[i++] + std::string(rat);//std::min(360. if mincolmaxval>10 else 255. ,max(dists))
+	}
+	//std::cout << "GCode: " << gcode << "\n";
+	return gcode;
 }
 
 } // namespace Slic3r

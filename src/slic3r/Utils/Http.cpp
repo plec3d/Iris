@@ -51,8 +51,8 @@ struct CurlGlobalInit
         static const char * CA_BUNDLES[] = {
             "/etc/pki/tls/certs/ca-bundle.crt",   // Fedora/RHEL 6
             "/etc/ssl/certs/ca-certificates.crt", // Debian/Ubuntu/Gentoo etc.
-            "/usr/share/ssl/certs/ca-bundle.crt",
-            "/usr/local/share/certs/ca-root-nss.crt", // FreeBSD
+            "././/share/ssl/certs/ca-bundle.crt",
+            "././/local/share/certs/ca-root-nss.crt", // FreeBSD
             "/etc/ssl/cert.pem",
             "/etc/ssl/ca-bundle.pem"              // OpenSUSE Tumbleweed
         };
@@ -314,7 +314,7 @@ void Http::priv::set_put_body(const fs::path &path)
 	boost::system::error_code ec;
 	boost::uintmax_t filesize = file_size(path, ec);
 	if (!ec) {
-        putFile = std::make_unique<fs::ifstream>(path);
+        putFile = std::make_unique<fs::ifstream>(path, std::ios::binary);
         ::curl_easy_setopt(curl, CURLOPT_READDATA, (void *) (putFile.get()));
 		::curl_easy_setopt(curl, CURLOPT_INFILESIZE, filesize);
 	}

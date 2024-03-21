@@ -1,7 +1,6 @@
 Build
 Build.bat
 /build/
-/deps/build/
 MYMETA.json
 MYMETA.yml
 _build
@@ -13,10 +12,12 @@ xs/MANIFEST.bak
 xs/assertlib*
 .init_bundle.ini
 .vs/*
-local-lib
 /src/TAGS
 /.vscode/
 build-linux/*
-deps/build/*
+deps/build*
+deps/build-linux/*
 **/.DS_Store
 **/.idea/
+.pkg_cache
+CMakeUserPresets.json

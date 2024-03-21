@@ -26,7 +26,7 @@
 #include "CustomGCode.hpp"
 #include "enum_bitmask.hpp"
 #include "TextConfiguration.hpp"
-#include "AppConfig.hpp"
+#include "EmbossShape.hpp"
 
 #include <map>
 #include <memory>
@@ -169,7 +169,6 @@ private:
 
     // To be accessed by the Model.
     friend class Model;
-    AppConfig*	app_config=NULL;
 	// Constructor, which assigns a new unique ID to the material and to its config.
 	ModelMaterial(Model *model) : m_model(model) { assert(this->id().valid()); }
 	// Copy constructor copies the IDs of the ModelMaterial and its config, and m_model!
@@ -295,25 +294,26 @@ struct CutConnector
     float height;
     float radius_tolerance;// [0.f : 1.f]
     float height_tolerance;// [0.f : 1.f]
+    float z_angle {0.f};
     CutConnectorAttributes attribs;
 
     CutConnector()
-        : pos(Vec3d::Zero()), rotation_m(Transform3d::Identity()), radius(5.f), height(10.f), radius_tolerance(0.f), height_tolerance(0.1f)
+        : pos(Vec3d::Zero()), rotation_m(Transform3d::Identity()), radius(5.f), height(10.f), radius_tolerance(0.f), height_tolerance(0.1f), z_angle(0.f)
     {}
 
-    CutConnector(Vec3d p, Transform3d rot, float r, float h, float rt, float ht, CutConnectorAttributes attributes)
-        : pos(p), rotation_m(rot), radius(r), height(h), radius_tolerance(rt), height_tolerance(ht), attribs(attributes)
+    CutConnector(Vec3d p, Transform3d rot, float r, float h, float rt, float ht, float za, CutConnectorAttributes attributes)
+        : pos(p), rotation_m(rot), radius(r), height(h), radius_tolerance(rt), height_tolerance(ht), z_angle(za), attribs(attributes)
     {}
 
     CutConnector(const CutConnector& rhs) :
-        CutConnector(rhs.pos, rhs.rotation_m, rhs.radius, rhs.height, rhs.radius_tolerance, rhs.height_tolerance, rhs.attribs) {}
+        CutConnector(rhs.pos, rhs.rotation_m, rhs.radius, rhs.height, rhs.radius_tolerance, rhs.height_tolerance, rhs.z_angle, rhs.attribs) {}
 
     bool operator==(const CutConnector& other) const;
 
     bool operator!=(const CutConnector& other) const { return !(other == (*this)); }
 
     template<class Archive> inline void serialize(Archive& ar) {
-        ar(pos, rotation_m, radius, height, radius_tolerance, height_tolerance, attribs);
+        ar(pos, rotation_m, radius, height, radius_tolerance, height_tolerance, z_angle, attribs);
     }
 };
 
@@ -342,10 +342,6 @@ public:
     // Instances of this ModelObject. Each instance defines a shift on the print bed, rotation around the Z axis and a uniform scaling.
     // Instances are owned by this ModelObject.
     ModelInstancePtrs       instances;
-    // used mixing extruder colors
-    std::vector<std::string> colors;// = {"#FF0000","#00FF00","#0000FF"};
-    // Parent object, owning this ModelObject. Set to nullptr here, so the macros above will have it initialized.
-    Model                *m_model { nullptr };
     // Printable and modifier volumes, each with its material ID and a set of override parameters.
     // ModelVolumes are owned by this ModelObject.
     ModelVolumePtrs         volumes;
@@ -357,7 +353,10 @@ public:
     // The pairs of <z, layer_height> are packed into a 1D array.
     LayerHeightProfile      layer_height_profile;
     // Whether or not this object is printable
-    bool                    printable { true };
+    bool                    printable { true };   
+    std::vector<std::pair<int,std::string>> mmu_colors;
+    std::vector<int> mmu_indices_map;
+    bool autofill_virtual_extruders {false};
 
     // This vector holds position of selected support points for SLA. The data are
     // saved in mesh coordinates to allow using them for several instances.
@@ -420,7 +419,7 @@ public:
     double                  min_z() const;
     double                  max_z() const;
 
-    void invalidate_bounding_box() { 
+    void invalidate_bounding_box() {
         m_bounding_box_approx_valid     = false;
         m_bounding_box_exact_valid      = false;
         m_min_max_z_valid               = false;
@@ -528,10 +527,12 @@ private:
     }
 	~ModelObject();
 	void assign_new_unique_ids_recursive() override;
-
+    // Parent object, owning this ModelObject. Set to nullptr here, so the macros above will have it initialized.
+    Model                *m_model { nullptr };
+    
     // To be able to return an object from own copy / clone methods. Hopefully the compiler will do the "Copy elision"
     // (Omits copy and move(since C++11) constructors, resulting in zero - copy pass - by - value semantics).
-    ModelObject(const ModelObject &rhs) : ObjectBase(-1), config(-1), layer_height_profile(-1), m_model(rhs.m_model) { 
+    ModelObject(const ModelObject &rhs) : ObjectBase(-1), config(-1), layer_height_profile(-1), m_model(rhs.m_model), mmu_colors(rhs.mmu_colors), mmu_indices_map(rhs.mmu_indices_map) { 
     	assert(this->id().invalid()); 
         assert(this->config.id().invalid()); 
         assert(this->layer_height_profile.id().invalid());
@@ -566,6 +567,8 @@ private:
     ModelObject& operator=(const ModelObject &rhs) {
     	this->assign_copy(rhs); 
     	m_model = rhs.m_model;
+        mmu_colors = rhs.mmu_colors;
+        mmu_indices_map = rhs.mmu_indices_map;
     	assert(this->id().valid()); 
         assert(this->config.id().valid()); 
         assert(this->layer_height_profile.id().valid());
@@ -579,6 +582,8 @@ private:
     ModelObject& operator=(ModelObject &&rhs) {
     	this->assign_copy(std::move(rhs)); 
     	m_model = rhs.m_model;
+        mmu_colors = rhs.mmu_colors;
+        mmu_indices_map = rhs.mmu_indices_map;
     	assert(this->id().valid()); 
         assert(this->config.id().valid());
         assert(this->layer_height_profile.id().valid());
@@ -596,9 +601,6 @@ private:
     }
 
     OBJECTBASE_DERIVED_COPY_MOVE_CLONE(ModelObject)
-
-    // Parent object, owning this ModelObject. Set to nullptr here, so the macros above will have it initialized.
-    //Model                *m_model { nullptr };
 
     // Bounding box, cached.
     mutable BoundingBoxf3 m_bounding_box_approx;
@@ -645,22 +647,21 @@ private:
         Internal::StaticSerializationWrapper<LayerHeightProfile> layer_heigth_profile_wrapper(layer_height_profile);
         ar(name, input_file, instances, volumes, config_wrapper, layer_config_ranges, layer_heigth_profile_wrapper, 
             sla_support_points, sla_points_status, sla_drain_holes, printable, origin_translation,
-            m_bounding_box_approx, m_bounding_box_approx_valid, 
+            m_bounding_box_approx, m_bounding_box_approx_valid, mmu_colors, mmu_indices_map,
             m_bounding_box_exact, m_bounding_box_exact_valid, m_min_max_z_valid,
             m_raw_bounding_box, m_raw_bounding_box_valid, m_raw_mesh_bounding_box, m_raw_mesh_bounding_box_valid,
             cut_connectors, cut_id);
 	}
-    AppConfig*	app_config=NULL;
+
     // Called by Print::validate() from the UI thread.
     unsigned int update_instances_print_volume_state(const BuildVolume &build_volume);
-    bool load_app_config();
-    
+
     // Called by min_z(), max_z()
     void update_min_max_z();
 };
 
 enum class EnforcerBlockerType : int8_t {
-    // Maximum is 3. The value is serialized in TriangleSelector into 2 bits.
+        // Maximum is 3. The value is serialized in TriangleSelector into 2 bits.
     NONE      = 0,
     ENFORCER  = 1,
     BLOCKER   = 2,
@@ -680,6 +681,8 @@ enum class EnforcerBlockerType : int8_t {
     Extruder13,
     Extruder14,
     Extruder15,
+    Extruder16,
+    ExtruderMax = Extruder16
 };
 
 enum class ConversionType : int {
@@ -698,6 +701,8 @@ public:
     bool set(const TriangleSelector& selector);
     indexed_triangle_set get_facets(const ModelVolume& mv, EnforcerBlockerType type) const;
     indexed_triangle_set get_facets_strict(const ModelVolume& mv, EnforcerBlockerType type) const;
+    // BBS
+    void get_facets(const ModelVolume& mv, std::vector<indexed_triangle_set>& facets_per_type) const;
     bool has_facets(const ModelVolume& mv, EnforcerBlockerType type) const;
     bool empty() const { return m_data.first.empty(); }
 
@@ -740,7 +745,9 @@ private:
     }
 
     std::pair<std::vector<std::pair<int, int>>, std::vector<bool>> m_data;
-
+    std::vector<std::vector<int>> m_multis;
+    std::string base87list = "()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~";
+    
     // To access set_new_unique_id() when copy / pasting a ModelVolume.
     friend class ModelVolume;
 };
@@ -751,6 +758,7 @@ class ModelVolume final : public ObjectBase
 {
 public:
     std::string         name;
+    
     // struct used by reload from disk command to recover data from disk
     struct Source
     {
@@ -831,9 +839,14 @@ public:
     // List of mesh facets painted for MMU segmentation.
     FacetsAnnotation    mmu_segmentation_facets;
 
+    
     // Is set only when volume is Embossed Text type
     // Contain information how to re-create volume
     std::optional<TextConfiguration> text_configuration;
+
+    // Is set only when volume is Embossed Shape
+    // Contain 2d information about embossed shape to be editabled
+    std::optional<EmbossShape> emboss_shape;
 
     // A parent object owning this modifier volume.
     ModelObject*        get_object() const { return this->object; }
@@ -846,6 +859,7 @@ public:
 	bool                is_support_blocker()    const { return m_type == ModelVolumeType::SUPPORT_BLOCKER; }
 	bool                is_support_modifier()   const { return m_type == ModelVolumeType::SUPPORT_BLOCKER || m_type == ModelVolumeType::SUPPORT_ENFORCER; }
     bool                is_text()               const { return text_configuration.has_value(); }
+    bool                is_svg() const { return emboss_shape.has_value()  && !text_configuration.has_value(); }
     bool                is_the_only_one_part() const; // behave like an object
     t_model_material_id material_id() const { return m_material_id; }
     void                reset_extra_facets();
@@ -1004,8 +1018,7 @@ private:
         name(other.name), source(other.source), m_mesh(other.m_mesh), m_convex_hull(other.m_convex_hull),
         config(other.config), m_type(other.m_type), object(object), m_transformation(other.m_transformation),
         supported_facets(other.supported_facets), seam_facets(other.seam_facets), mmu_segmentation_facets(other.mmu_segmentation_facets),
-        cut_info(other.cut_info),
-        text_configuration(other.text_configuration)
+        cut_info(other.cut_info), text_configuration(other.text_configuration), emboss_shape(other.emboss_shape)
     {
 		assert(this->id().valid()); 
         assert(this->config.id().valid()); 
@@ -1026,8 +1039,7 @@ private:
     // Providing a new mesh, therefore this volume will get a new unique ID assigned.
     ModelVolume(ModelObject *object, const ModelVolume &other, TriangleMesh &&mesh) :
         name(other.name), source(other.source), config(other.config), object(object), m_mesh(new TriangleMesh(std::move(mesh))), m_type(other.m_type), m_transformation(other.m_transformation),
-        cut_info(other.cut_info),
-        text_configuration(other.text_configuration)
+        cut_info(other.cut_info), text_configuration(other.text_configuration), emboss_shape(other.emboss_shape)
     {
 		assert(this->id().valid()); 
         assert(this->config.id().valid()); 
@@ -1075,6 +1087,7 @@ private:
         cereal::load_by_value(ar, mmu_segmentation_facets);
         cereal::load_by_value(ar, config);
         cereal::load(ar, text_configuration);
+        cereal::load(ar, emboss_shape);
 		assert(m_mesh);
 		if (has_convex_hull) {
 			cereal::load_optional(ar, m_convex_hull);
@@ -1092,6 +1105,7 @@ private:
         cereal::save_by_value(ar, mmu_segmentation_facets);
         cereal::save_by_value(ar, config);
         cereal::save(ar, text_configuration);
+        cereal::save(ar, emboss_shape);
 		if (has_convex_hull)
 			cereal::save_optional(ar, m_convex_hull);
 	}
@@ -1121,19 +1135,47 @@ enum ModelInstanceEPrintVolumeState : unsigned char
 class ModelInstance final : public ObjectBase
 {
 private:
-    Geometry::Transformation m_transformation;
+    
 
 public:
     // flag showing the position of this instance with respect to the print volume (set by Print::validate() using ModelObject::check_instances_print_volume_state())
     ModelInstanceEPrintVolumeState print_volume_state;
     // Whether or not this instance is printable
     bool printable { true };
+    Geometry::Transformation m_transformation;
+    Geometry::Transformation m_assemble_transformation;
+    Vec3d m_offset_to_assembly{ 0.0, 0.0, 0.0 };
+    bool m_assemble_initialized;
 
     ModelObject* get_object() const { return this->object; }
 
     const Geometry::Transformation& get_transformation() const { return m_transformation; }
     void set_transformation(const Geometry::Transformation& transformation) { m_transformation = transformation; }
+    
+    const Geometry::Transformation& get_assemble_transformation() const { return m_assemble_transformation; }
+    void set_assemble_transformation(const Geometry::Transformation& transformation) {
+        m_assemble_initialized = true;
+        m_assemble_transformation = transformation;
+    }
+    void set_assemble_from_transform(Transform3d& transform) {
+        m_assemble_initialized = true;
+        m_assemble_transformation.set_matrix(transform);
+    }
+    void set_assemble_offset(const Vec3d& offset) { m_assemble_transformation.set_offset(offset); }
+    void rotate_assemble(double angle, const Vec3d& axis) {
+        m_assemble_transformation.set_rotation(m_assemble_transformation.get_rotation() + Geometry::extract_rotation(Eigen::Quaterniond(Eigen::AngleAxisd(angle, axis)).toRotationMatrix()));
+    }
 
+    // BBS
+    void set_offset_to_assembly(const Vec3d& offset) { m_offset_to_assembly = offset; }
+    Vec3d get_offset_to_assembly() const { return m_offset_to_assembly; }
+
+    // BBS
+    void rotate(Matrix3d rotation_matrix) {
+        auto rotation = m_transformation.get_rotation_matrix();
+        rotation      = rotation_matrix * rotation;
+        set_rotation(Geometry::Transformation(rotation).get_rotation());
+    }
     Vec3d get_offset() const { return m_transformation.get_offset(); }
     double get_offset(Axis axis) const { return m_transformation.get_offset(axis); }
     
@@ -1192,7 +1234,7 @@ private:
     explicit ModelInstance(ModelObject* object) : print_volume_state(ModelInstancePVS_Inside), object(object) { assert(this->id().valid()); }
     // Constructor, which assigns a new unique ID.
     explicit ModelInstance(ModelObject *object, const ModelInstance &other) :
-        m_transformation(other.m_transformation), print_volume_state(ModelInstancePVS_Inside), printable(other.printable), object(object) { assert(this->id().valid() && this->id() != other.id()); }
+        m_transformation(other.m_transformation),  m_assemble_transformation(other.m_assemble_transformation), print_volume_state(ModelInstancePVS_Inside), printable(other.printable), object(object) { assert(this->id().valid() && this->id() != other.id()); }
 
     explicit ModelInstance(ModelInstance &&rhs) = delete;
     ModelInstance& operator=(const ModelInstance &rhs) = delete;
@@ -1203,7 +1245,7 @@ private:
 	// Used for deserialization, therefore no IDs are allocated.
 	ModelInstance() : ObjectBase(-1), object(nullptr) { assert(this->id().invalid()); }
 	template<class Archive> void serialize(Archive &ar) {
-        ar(m_transformation, print_volume_state, printable);
+        ar(m_transformation,  m_assemble_transformation, print_volume_state, printable);
     }
 };
 
@@ -1252,10 +1294,7 @@ public:
     ModelObjectPtrs     objects;
     // Wipe tower object.
     ModelWipeTower	    wipe_tower;
-
-    // used mixing extruder colors
-    std::vector<std::string> colors;// = {"#FF0000","#00FF00","#0000FF"};
-
+    
     // Extensions for color print
     CustomGCode::Info custom_gcode_per_print_z;
     

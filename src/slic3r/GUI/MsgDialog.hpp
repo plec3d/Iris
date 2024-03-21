@@ -17,7 +17,7 @@
 #include <wx/statline.h>
 
 class wxBoxSizer;
-class wxCheckBox;
+class CheckBox;
 class wxStaticBitmap;
 
 namespace Slic3r {
@@ -132,7 +132,7 @@ public:
 // Generic rich message dialog, used intead of wxRichMessageDialog
 class RichMessageDialog : public MsgDialog
 {
-	wxCheckBox* m_checkBox{ nullptr };
+	CheckBox*   m_checkBox{ nullptr };
 	wxString	m_checkBoxText;
 	bool		m_checkBoxValue{ false };
 
@@ -319,6 +319,8 @@ public:
 	InfoDialog&operator=(InfoDialog&&) = delete;
 	InfoDialog&operator=(const InfoDialog&) = delete;
 	virtual ~InfoDialog() = default;
+
+	void set_caption(const wxString& caption) { this->SetTitle(caption); }
 
 private:
 	wxString msg;

@@ -94,6 +94,13 @@ bool ExPolygon::contains(const Polyline &polyline) const
 {
     return diff_pl(polyline, *this).empty();
 }
+bool ExPolygon::contains_h(const Point &point) const
+{
+    for (const Polygon &hole : this->holes)
+        if (hole.contains(point))
+            return true;
+    return false;
+}
 
 bool ExPolygon::contains(const Polylines &polylines) const
 {
@@ -110,14 +117,6 @@ bool ExPolygon::contains(const Polylines &polylines) const
     svg.draw(pl_out, "red");
     #endif
     return pl_out.empty();
-}
-
-bool ExPolygon::contains_h(const Point &point) const
-{
-    for (const Polygon &hole : this->holes)
-        if (hole.contains(point))
-            return true;
-    return false;
 }
 
 bool ExPolygon::contains(const Point &point, bool border_result /* = true */) const
@@ -438,7 +437,7 @@ bool has_duplicate_points(const ExPolygons &expolys)
 {
 #if 1
     // Check globally.
-#if 1
+#if 0
     // Detect duplicates by sorting with quicksort. It is quite fast, but ankerl::unordered_dense is around 1/4 faster.
     Points allpts;
     allpts.reserve(count_points(expolys));
@@ -475,6 +474,24 @@ bool has_duplicate_points(const ExPolygons &expolys)
             return true;
     return false;
 #endif
+}
+
+bool remove_same_neighbor(ExPolygons &expolygons)
+{
+    if (expolygons.empty())
+        return false;
+    bool remove_from_holes   = false;
+    bool remove_from_contour = false;
+    for (ExPolygon &expoly : expolygons) {
+        remove_from_contour |= remove_same_neighbor(expoly.contour);
+        remove_from_holes |= remove_same_neighbor(expoly.holes);
+    }
+    // Removing of expolygons without contour
+    if (remove_from_contour)
+        expolygons.erase(std::remove_if(expolygons.begin(), expolygons.end(),
+                                        [](const ExPolygon &p) { return p.contour.points.size() <= 2; }),
+                         expolygons.end());
+    return remove_from_holes || remove_from_contour;
 }
 
 bool remove_sticks(ExPolygon &poly)

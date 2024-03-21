@@ -30,12 +30,12 @@ NonplanarSurface::calculate_stats()
     this->stats.max.y = -10000000;
     this->stats.max.z = -10000000;
     for(auto& facet : this->mesh) {
-        this->stats.min.x = std::min(this->stats.min.x, facet.second.stats.min.x);
-        this->stats.min.y = std::min(this->stats.min.y, facet.second.stats.min.y);
-        this->stats.min.z = std::min(this->stats.min.z, facet.second.stats.min.z);
-        this->stats.max.x = std::max(this->stats.max.x, facet.second.stats.max.x);
-        this->stats.max.y = std::max(this->stats.max.y, facet.second.stats.max.y);
-        this->stats.max.z = std::max(this->stats.max.z, facet.second.stats.max.z);
+        this->stats.min.x = std::min(this->stats.min.x, facet.second.stats.min.x());
+        this->stats.min.y = std::min(this->stats.min.y, facet.second.stats.min.y());
+        this->stats.min.z = std::min(this->stats.min.z, facet.second.stats.min.z());
+        this->stats.max.x = std::max(this->stats.max.x, facet.second.stats.max.x());
+        this->stats.max.y = std::max(this->stats.max.y, facet.second.stats.max.y());
+        this->stats.max.z = std::max(this->stats.max.z, facet.second.stats.max.z());
     }
 }
 
@@ -91,10 +91,10 @@ NonplanarSurface::rotate_z(float angle) {
 
   for(auto& facet : this->mesh) {
     for(int j = 0; j < 3; j++) {
-        double xold = facet.second.vertex[j].x;
-        double yold = facet.second.vertex[j].y;
-        facet.second.vertex[j].x = c * xold - s * yold;
-        facet.second.vertex[j].y = s * xold + c * yold;
+        double xold = facet.second.vertex[j].x();
+        double yold = facet.second.vertex[j].y();
+        facet.second.vertex[j].x() = c * xold - s * yold;
+        facet.second.vertex[j].y() = s * xold + c * yold;
     }
     facet.second.calculate_stats();
   }
@@ -110,27 +110,27 @@ NonplanarSurface::debug_output()
                            "Height " << this->stats.max.z - this->stats.min.z << std::endl;
     for(auto& facet : this->mesh) {
         std::cout << "triangle: (" << facet.first << ")(" << facet.second.marked << ") ";
-        std::cout << " (" << (180*std::acos(facet.second.normal.z))/3.14159265 << "°)";
+        std::cout << " (" << (180*std::acos(facet.second.normal.z()))/3.14159265 << "°)";
 
         std::cout << " | V0:";
-        std::cout << " X:"<< facet.second.vertex[0].x;
-        std::cout << " Y:"<< facet.second.vertex[0].y;
-        std::cout << " Z:"<< facet.second.vertex[0].z;
+        std::cout << " X:"<< facet.second.vertex[0].x();
+        std::cout << " Y:"<< facet.second.vertex[0].y();
+        std::cout << " Z:"<< facet.second.vertex[0].z();
 
         std::cout << " | V1:";
-        std::cout << " X:"<< facet.second.vertex[1].x;
-        std::cout << " Y:"<< facet.second.vertex[1].y;
-        std::cout << " Z:"<< facet.second.vertex[1].z;
+        std::cout << " X:"<< facet.second.vertex[1].x();
+        std::cout << " Y:"<< facet.second.vertex[1].y();
+        std::cout << " Z:"<< facet.second.vertex[1].z();
 
         std::cout << " | V2:";
-        std::cout << " X:"<< facet.second.vertex[2].x;
-        std::cout << " Y:"<< facet.second.vertex[2].y;
-        std::cout << " Z:"<< facet.second.vertex[2].z;
+        std::cout << " X:"<< facet.second.vertex[2].x();
+        std::cout << " Y:"<< facet.second.vertex[2].y();
+        std::cout << " Z:"<< facet.second.vertex[2].z();
 
         std::cout << " | Normal:";
-        std::cout << " X:"<< facet.second.normal.x;
-        std::cout << " Y:"<< facet.second.normal.y;
-        std::cout << " Z:"<< facet.second.normal.z;
+        std::cout << " X:"<< facet.second.normal.x();
+        std::cout << " Y:"<< facet.second.normal.y();
+        std::cout << " Z:"<< facet.second.normal.z();
 
         //TODO check if neighbors exist
         // stl_neighbors* neighbors = mesh.stl.neighbors_start + facet.first;
@@ -227,15 +227,29 @@ NonplanarSurface::horizontal_projection() const
     for(auto& facet : this->mesh) {
         Polygon p;
         p.points.resize(3);
-        p.points[0] = Point(scale_(facet.second.vertex[0].x), scale_(facet.second.vertex[0].y));
-        p.points[1] = Point(scale_(facet.second.vertex[1].x), scale_(facet.second.vertex[1].y));
-        p.points[2] = Point(scale_(facet.second.vertex[2].x), scale_(facet.second.vertex[2].y));
-        //p.make_counter_clockwise();  // do this after scaling, as winding order might change while doing that
+        p.points[0] = Point(scale_(facet.second.vertex[0].x()), scale_(facet.second.vertex[0].y()));
+        p.points[1] = Point(scale_(facet.second.vertex[1].x()), scale_(facet.second.vertex[1].y()));
+        p.points[2] = Point(scale_(facet.second.vertex[2].x()), scale_(facet.second.vertex[2].y()));
+        p.make_counter_clockwise();  // do this after scaling, as winding order might change while doing that
         pp.push_back(p);
     }
 
     // the offset factor was tuned using groovemount.stl
     return union_ex(offset(pp, scale_(0.01)));
+}
+
+std::vector<IntersectInfo> NonplanarSurface::intersect_rays(const Vec3f &src, const std::vector<Vec3f> &dirs)
+{
+    std::vector<RayNP> rays;
+    for(const Vec3f &dir: dirs){
+        RayNP ray;
+        ray.rayOrig = src;
+        ray.rayEnd = dir;
+        rays.push_back(ray);
+    }
+    RayTriangleIntersection rti;
+    std::vector<IntersectInfo> res = rti.checkMeshIntersection(rays, this->mesh);
+    return res;
 }
 
 }

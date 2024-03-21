@@ -1,6 +1,11 @@
 #version 110
 
 const vec3 ZERO = vec3(0.0, 0.0, 0.0);
+//BBS: add grey and orange
+//const vec3 GREY = vec3(0.9, 0.9, 0.9);
+const vec3 ORANGE = vec3(0.8, 0.4, 0.0);
+const vec3 LightRed = vec3(0.78, 0.0, 0.0);
+const vec3 LightBlue = vec3(0.73, 1.0, 1.0);
 const float EPSILON = 0.0001;
 
 struct PrintVolumeDetection
@@ -28,6 +33,9 @@ uniform bool use_color_clip_plane;
 uniform vec4 uniform_color_clip_plane_1;
 uniform vec4 uniform_color_clip_plane_2;
 uniform SlopeDetection slope;
+
+//BBS: add outline_color
+uniform bool is_outline;
 
 #ifdef ENABLE_ENVIRONMENT_MAP
     uniform sampler2D environment_tex;
@@ -80,10 +88,13 @@ void main()
 	}
 	color.rgb = (any(lessThan(pv_check_min, ZERO)) || any(greaterThan(pv_check_max, ZERO))) ? mix(color.rgb, ZERO, 0.3333) : color.rgb;
 	
+    //BBS: add outline_color
+    if (is_outline)
+        gl_FragColor = uniform_color;
 #ifdef ENABLE_ENVIRONMENT_MAP
-    if (use_environment_tex)
+    else if (use_environment_tex)
         gl_FragColor = vec4(0.45 * texture(environment_tex, normalize(eye_normal).xy * 0.5 + 0.5).xyz + 0.8 * color.rgb * intensity.x, color.a);
-    else
 #endif
+    else
         gl_FragColor = vec4(vec3(intensity.y) + color.rgb * intensity.x, color.a);
 }

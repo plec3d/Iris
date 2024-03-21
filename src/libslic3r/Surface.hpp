@@ -34,10 +34,6 @@ enum SurfaceType {
     stInternalVoid,
     // Inner/outer perimeters.
     stPerimeter,
-    // 
-    stTopNonplanar,
-    //
-    stInternalSolidNonplanar,
     // Number of SurfaceType enums.
     stCount,
 };
@@ -51,36 +47,36 @@ public:
     unsigned short  thickness_layers {  1 };  // in layers
     double          bridge_angle     { -1. }; // in radians, ccw, 0 = East, only 0+ (negative means undefined)
     unsigned short  extra_perimeters {  0 };
-    float           distance_to_top  {  0 };
+    bool bridge {false};
     Polyline pedestal;
 
     Surface(const Slic3r::Surface &rhs)
         : surface_type(rhs.surface_type), expolygon(rhs.expolygon),pedestal(rhs.pedestal),
-            thickness(rhs.thickness), thickness_layers(rhs.thickness_layers), 
+            thickness(rhs.thickness), thickness_layers(rhs.thickness_layers), bridge(rhs.bridge),
             bridge_angle(rhs.bridge_angle), extra_perimeters(rhs.extra_perimeters)
         {};
 
     Surface(SurfaceType _surface_type, const ExPolygon &_expolygon)
-        : surface_type(_surface_type), expolygon(_expolygon),pedestal(Polyline()),
+        : surface_type(_surface_type), expolygon(_expolygon),pedestal(Polyline()),  bridge(false),
             thickness(-1), thickness_layers(1), bridge_angle(-1), extra_perimeters(0)
         {};
     Surface(const Surface &other, const ExPolygon &_expolygon)
         : surface_type(other.surface_type), expolygon(_expolygon),pedestal(other.pedestal),
-            thickness(other.thickness), thickness_layers(other.thickness_layers), 
+            thickness(other.thickness), thickness_layers(other.thickness_layers), bridge(other.bridge),
             bridge_angle(other.bridge_angle), extra_perimeters(other.extra_perimeters)
         {};
     Surface(Surface &&rhs)
         : surface_type(rhs.surface_type), expolygon(std::move(rhs.expolygon)),pedestal(rhs.pedestal),
-            thickness(rhs.thickness), thickness_layers(rhs.thickness_layers), 
+            thickness(rhs.thickness), thickness_layers(rhs.thickness_layers), bridge(rhs.bridge),
             bridge_angle(rhs.bridge_angle), extra_perimeters(rhs.extra_perimeters)
         {};
     Surface(SurfaceType _surface_type, ExPolygon &&_expolygon)
-        : surface_type(_surface_type), expolygon(std::move(_expolygon)),pedestal(Polyline()),
+        : surface_type(_surface_type), expolygon(std::move(_expolygon)),pedestal(Polyline()), bridge(false),
             thickness(-1), thickness_layers(1), bridge_angle(-1), extra_perimeters(0)
         {};
     Surface(const Surface &other, ExPolygon &&_expolygon)
         : surface_type(other.surface_type), expolygon(std::move(_expolygon)),pedestal(other.pedestal),
-            thickness(other.thickness), thickness_layers(other.thickness_layers), 
+            thickness(other.thickness), thickness_layers(other.thickness_layers),  bridge(other.bridge),
             bridge_angle(other.bridge_angle), extra_perimeters(other.extra_perimeters)
         {};
 
@@ -88,25 +84,24 @@ public:
     {
         surface_type     = rhs.surface_type;
         expolygon        = rhs.expolygon;
-        pedestal         = rhs.pedestal;
+	    pedestal         = rhs.pedestal;
+        bridge           = rhs.bridge;
         thickness        = rhs.thickness;
         thickness_layers = rhs.thickness_layers;
         bridge_angle     = rhs.bridge_angle;
         extra_perimeters = rhs.extra_perimeters;
-        distance_to_top  = rhs.distance_to_top;
         return *this;
     }
-
     Surface& operator=(Surface &&rhs)
     {
         surface_type     = rhs.surface_type;
         expolygon        = std::move(rhs.expolygon);
-        thickness        = rhs.thickness;
-        pedestal         = rhs.pedestal;
+	    pedestal         = rhs.pedestal;
+        bridge           = rhs.bridge;
+	    thickness        = rhs.thickness;
         thickness_layers = rhs.thickness_layers;
         bridge_angle     = rhs.bridge_angle;
         extra_perimeters = rhs.extra_perimeters;
-        distance_to_top  = rhs.distance_to_top;
         return *this;
     }
 
@@ -115,14 +110,12 @@ public:
     void   clear() 			   { expolygon.clear(); }
 
     // The following methods do not test for stPerimeter.
-	bool   is_top()      const { return this->surface_type == stTop || this->surface_type == stTopNonplanar; }
+	bool   is_top()      const { return this->surface_type == stTop; }
 	bool   is_bottom()   const { return this->surface_type == stBottom || this->surface_type == stBottomBridge; }
 	bool   is_bridge()   const { return this->surface_type == stBottomBridge || this->surface_type == stInternalBridge; }
 	bool   is_external() const { return this->is_top() || this->is_bottom(); }
 	bool   is_internal() const { return ! this->is_external(); }
-	bool   is_internal_solid() const { return this->surface_type == stInternalSolid || this->surface_type == stInternalSolidNonplanar; }
-	bool   is_solid()    const { return this->is_external() || this->surface_type == stInternalSolid || this->surface_type == stInternalSolidNonplanar || this->surface_type == stInternalBridge; }
-	bool   is_nonplanar() const { return this->surface_type == stTopNonplanar || this->surface_type == stInternalSolidNonplanar; }
+	bool   is_solid()    const { return this->is_external() || this->surface_type == stInternalSolid || this->surface_type == stInternalBridge; }
 };
 
 typedef std::vector<Surface> Surfaces;
@@ -259,20 +252,9 @@ inline void polygons_append(Polygons &dst, SurfacesPtr &&src)
 inline void surfaces_append(Surfaces &dst, const ExPolygons &src, SurfaceType surfaceType) 
 { 
     dst.reserve(dst.size() + src.size());
-    for (const ExPolygon &expoly : src) {
+    for (const ExPolygon &expoly : src)
         dst.emplace_back(Surface(surfaceType, expoly));
-    }
 }
-inline void surfaces_append(Surfaces &dst, const ExPolygons &src, SurfaceType surfaceType, float distance_to_top) 
-{
-    dst.reserve(dst.size() + src.size());
-    for (const ExPolygon &expoly : src) {
-        Surface s = Surface(surfaceType, expoly);
-        s.distance_to_top = distance_to_top;
-        dst.emplace_back(s);
-    }
-}
-
 inline void surfaces_append(Surfaces &dst, const ExPolygons &src, const Surface &surfaceTempl) 
 { 
     dst.reserve(dst.size() + number_polygons(src));
@@ -320,8 +302,7 @@ inline bool surfaces_could_merge(const Surface &s1, const Surface &s2)
         s1.surface_type      == s2.surface_type     &&
         s1.thickness         == s2.thickness        &&
         s1.thickness_layers  == s2.thickness_layers &&
-        s1.bridge_angle      == s2.bridge_angle     &&
-        s1.distance_to_top   == s2.distance_to_top;
+        s1.bridge_angle      == s2.bridge_angle;
 }
 
 class SVG;

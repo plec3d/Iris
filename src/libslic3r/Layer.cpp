@@ -64,8 +64,6 @@ void Layer::make_slices()
         }
         // lslices are sorted by topological order from outside to inside from the clipper union used above
         this->lslices = slices;
-
-        BOOST_LOG_TRIVIAL(trace) << "make_slices layer " << id() << " found " << slices.size() << " slices";
     }
 
     this->lslice_indices_sorted_by_print_order = chain_expolygons(this->lslices);
@@ -98,7 +96,7 @@ void Layer::make_slices()
 // Use the default zero edge merging distance. For this kind of safety offset the accuracy of normal direction is not important.
 //    co.ShortestEdgeLength = delta * ClipperOffsetShortestEdgeFactor;
 //    static constexpr const double accept_area_threshold_ccw = sqr(scaled<double>(0.1 * delta));
-    // Such a small hole should not survive the shrinkage, it should grow over 
+    // Such a small hole should not survive the shrinkage, it should grow over
 //    static constexpr const double accept_area_threshold_cw  = sqr(scaled<double>(0.2 * delta));
 
     for (const ExPolygon &expoly : expolygons) {
@@ -443,7 +441,7 @@ static void connect_layer_slices(
                 // thus each point of each intersection polygon should fit completely inside one of the original (unshrunk) expolygons.
                 assert(false);
             }
-            // The comment below may not be valid anymore, see the comment above. However the code is used in case the polynode contains multiple references 
+            // The comment below may not be valid anymore, see the comment above. However the code is used in case the polynode contains multiple references
             // to other_layer expolygons, thus the references are not unique.
             //
             // The check above might sometimes fail when the polygons overlap only on points, which causes the clipper to detect no intersection.
@@ -685,7 +683,7 @@ void Layer::make_perimeters()
     		                && config.perimeter_speed             == other_config.perimeter_speed
     		                && config.external_perimeter_speed    == other_config.external_perimeter_speed
                             && dynamic_overhang_speed_compatibility
-    		                && (config.gap_fill_enabled ? config.gap_fill_speed.value : 0.) == 
+    		                && (config.gap_fill_enabled ? config.gap_fill_speed.value : 0.) ==
                                (other_config.gap_fill_enabled ? other_config.gap_fill_speed.value : 0.)
     		                && config.overhangs                   == other_config.overhangs
     		                && config.opt_serialize("perimeter_extrusion_width") == other_config.opt_serialize("perimeter_extrusion_width")
@@ -1079,7 +1077,7 @@ void Layer::export_region_slices_to_svg(const char *path) const
 void Layer::export_region_slices_to_svg_debug(const char *name) const
 {
     static size_t idx = 0;
-    this->export_region_slices_to_svg(debug_out_path("Layer-%d-slices-%s-%d.svg", id(), name, idx ++).c_str());
+    this->export_region_slices_to_svg(debug_out_path("Layer-slices-%s-%d.svg", name, idx ++).c_str());
 }
 
 void Layer::export_region_fill_surfaces_to_svg(const char *path) const
@@ -1105,57 +1103,7 @@ void Layer::export_region_fill_surfaces_to_svg(const char *path) const
 void Layer::export_region_fill_surfaces_to_svg_debug(const char *name) const
 {
     static size_t idx = 0;
-    this->export_region_fill_surfaces_to_svg(debug_out_path("Layer-%d-fill_surfaces-%s-%d.svg", id(), name, idx ++).c_str());
-}
-
-void Layer::export_lslices_polygons_to_svg(const char *path) const
-{
-    BoundingBox bbox;
-    for (const auto *region : m_regions)
-        for (const auto &surface : region->slices())
-            bbox.merge(get_extents(surface.expolygon));
-
-    SVG svg(path, bbox);
-    for (int i = 0; i< lslices.size(); i++)
-        svg.draw(lslices[i], "black", 1.0);
-    svg.Close();
-}
-
-// Export to "out/Layer-%name-%idx.svg" with an increasing index with every export.
-void Layer::export_lslices_polygons_to_svg_debug(const char *name) const
-{
-    static size_t idx = 0;
-    this->export_lslices_polygons_to_svg(debug_out_path("Layer-%d-lslice_polygons-%s-%d.svg", id(), name, idx ++).c_str());
-}
-
-void 
-LayerRegion::remove_nonplanar_slices(SurfaceCollection topNonplanar) {
-    Surfaces layerm_slices_surfaces(m_slices.surfaces);
-
-    //save previously detected nonplanar surfaces
-    SurfaceCollection polyNonplanar;
-    for(Surface s : m_slices.surfaces) {
-        if (s.is_nonplanar()) {
-            polyNonplanar.surfaces.push_back(s);
-        }
-    }
-
-    // clear internal surfaces
-    m_slices.clear();
-
-    // append internal surfaces again without the found topNonplanar surfaces
-    m_slices.append(
-        diff_ex(
-            union_ex(layerm_slices_surfaces), 
-            topNonplanar.surfaces, 
-            ApplySafetyOffset::No),
-        stInternal
-    );
-}
-
-void 
-LayerRegion::append_top_nonplanar_slices(SurfaceCollection topNonplanar) {
-    m_slices.append(std::move(topNonplanar));
+    this->export_region_fill_surfaces_to_svg(debug_out_path("Layer-fill_surfaces-%s-%d.svg", name, idx ++).c_str());
 }
 
 BoundingBox get_extents(const LayerRegion &layer_region)

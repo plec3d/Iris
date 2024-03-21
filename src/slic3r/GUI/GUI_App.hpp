@@ -12,6 +12,8 @@
 #include "ConfigWizard.hpp"
 #include "OpenGLManager.hpp"
 #include "libslic3r/Preset.hpp"
+#include "libslic3r/PresetBundle.hpp"
+#include "../Utils/PrintHost.hpp"
 
 #include <wx/app.h>
 #include <wx/colour.h>
@@ -101,6 +103,7 @@ enum ConfigMenuIDs {
     ConfigMenuLanguage,
     ConfigMenuFlashFirmware,
     ConfigMenuCnt,
+    ConfigMenuWifiConfigFile
 };
 
 class Tab;
@@ -186,6 +189,10 @@ public:
     bool is_gcode_viewer() const { return m_app_mode == EAppMode::GCodeViewer; }
     bool is_recreating_gui() const { return m_is_recreating_gui; }
     std::string logo_name() const { return is_editor() ? "PrusaSlicer" : "PrusaSlicer-gcodeviewer"; }
+    int filaments_cnt() const
+    {
+        return preset_bundle->filament_presets.size();
+    }
 
     // To be called after the GUI is fully built up.
     // Process command line parameters cached in this->init_params,
@@ -213,6 +220,7 @@ public:
     void            UpdateDVCDarkUI(wxDataViewCtrl* dvc, bool highlited = false);
     // update color mode for panel including all static texts controls
     void            UpdateAllStaticTextDarkUI(wxWindow* parent);
+    void            SetWindowVariantForButton(wxButton* btn);
     void            init_fonts();
 	void            update_fonts(const MainFrame *main_frame = nullptr);
     void            set_label_clr_modified(const wxColour& clr);
@@ -247,7 +255,9 @@ public:
     const wxFont&   link_font()             { return m_link_font; }
     int             em_unit() const         { return m_em_unit; }
     bool            tabs_as_menu() const;
-    wxSize          get_min_size() const;
+    bool            suppress_round_corners() const;
+    wxSize          get_min_size(wxWindow* display_win) const;
+    int             get_max_font_pt_size();
     float           toolbar_icon_scale(const bool is_limited = false) const;
     void            set_auto_toolbar_icon_scale(float scale) const;
     void            check_printer_presets();
@@ -316,6 +326,8 @@ public:
     GalleryDialog *      gallery_dialog();
     Downloader*          downloader();
 
+    std::string         run_command(std::string cmd);
+
     // Parameters extracted from the command line to be passed to GUI after initialization.
     GUI_InitParams* init_params { nullptr };
 
@@ -329,10 +341,11 @@ public:
 
     wxBookCtrlBase* tab_panel() const ;
     int             extruders_cnt() const;
+    int             virtual_extruders_cnt() const;
     int             extruders_edited_cnt() const;
     bool            has_mixing_extruders() const;
     std::vector<std::string> get_stored_mixing_colors();
-    std::vector<std::string> get_mixing_extruder_colors();
+    std::vector<std::vector<std::string>> get_mixing_extruder_colors();
     std::vector<int> virtual_extruders() const;
     std::vector<unsigned char> mixing_extruders() const;
 
@@ -373,6 +386,7 @@ public:
     void            associate_3mf_files();
     void            associate_stl_files();
     void            associate_gcode_files();
+    void            associate_bgcode_files();
 #endif // __WXMSW__
 
 

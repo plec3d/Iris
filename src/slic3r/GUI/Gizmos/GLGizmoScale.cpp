@@ -88,7 +88,7 @@ bool GLGizmoScale3D::on_mouse(const wxMouseEvent &mouse_event)
                 // and from that calculates the offset (in world coordinates) to be applied to fullfill the constraint
                 update_render_data();
                 const Vec3d constraint_position = m_grabbers_transform * m_grabbers[constraint_id(m_hover_id)].center;
-                // re-apply the scale because the selection always applies the transformations with respect to the initial state 
+                // re-apply the scale because the selection always applies the transformations with respect to the initial state
                 // set into on_start_dragging() with the call to selection.setup_cache()
                 m_parent.get_selection().scale_and_translate(m_scale, m_starting.constraint_position - constraint_position, transformation_type);
             }

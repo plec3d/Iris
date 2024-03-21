@@ -43,8 +43,6 @@ namespace Slic3r {
 class BuildVolume;
 class Model;
 class ModelObject;
-enum class ModelObjectCutAttribute : int;
-using ModelObjectCutAttributes = enum_bitmask<ModelObjectCutAttribute>;
 class ModelInstance;
 class Print;
 class SLAPrint;
@@ -188,6 +186,8 @@ public:
     void load_gcode();
     void load_gcode(const wxString& filename);
     void reload_gcode_from_disk();
+    void convert_gcode_to_ascii();
+    void convert_gcode_to_binary();
     void refresh_print();
 
     std::vector<size_t> load_files(const std::vector<boost::filesystem::path>& input_files, bool load_model = true, bool load_config = true, bool imperial_units = false);
@@ -338,10 +338,14 @@ public:
     void set_extruder_color(std::string color, int idx);
     void set_extruder_count(int idx, bool virtualExtruders = false);
     void add_virtual_extruders(std::vector<std::string> colors, int idx, int num_extruders);
-    int id_like_this_virtual_extruder(std::string& color, int extruder_id, int num_extruders, bool noNew = false);
+    int get_real_extruders_cnt();
+    int id_like_this_virtual_extruder(std::string& color, int extruder_id, int num_extruders = -1, bool noNew = false);
+    void ask_mixing_question();
     bool store_mixing_color(std::string& color, int extruder_id, int to_delete = -1);
-    void remove_all_virtual_extruders();
+    void remove_all_virtual_extruders(int extra = 0);
+    void rebuild_virtual_extruders();
     void remove_extruders_after(int idx);
+    
     void update_menus();
     void show_action_buttons(const bool is_ready_to_slice) const;
     void show_action_buttons() const;
@@ -381,7 +385,7 @@ public:
     bool can_increase_instances() const;
     bool can_decrease_instances(int obj_idx = -1) const;
     bool can_set_instance_to_object() const;
-    bool can_fix_through_netfabb() const;
+    bool can_fix_through_winsdk() const;
     bool can_simplify() const;
     bool can_split_to_objects() const;
     bool can_split_to_volumes() const;
@@ -488,6 +492,11 @@ public:
 
     void toggle_render_statistic_dialog();
     bool is_render_statistic_dialog_visible() const;
+    
+    void toggle_show_wireframe();
+    bool is_show_wireframe() const;
+    void enable_wireframe(bool status);
+    bool is_wireframe_enabled() const;
 
     void set_keep_current_preview_type(bool value);
 
@@ -499,6 +508,7 @@ public:
     wxMenu* object_menu();
     wxMenu* part_menu();
     wxMenu* text_part_menu();
+    wxMenu* svg_part_menu();
     wxMenu* sla_object_menu();
     wxMenu* default_menu();
     wxMenu* instance_menu();

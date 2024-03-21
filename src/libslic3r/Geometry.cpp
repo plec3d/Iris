@@ -683,7 +683,7 @@ TransformationSVD::TransformationSVD(const Transform3d& trafo)
                std::abs(transformed_axes[1].dot(transformed_axes[2])) > EPSILON ||
                std::abs(transformed_axes[2].dot(transformed_axes[0])) > EPSILON;
 
-        // This following old code does not work under all conditions. The v matrix can become non diagonal (see SPE-1492) 
+        // This following old code does not work under all conditions. The v matrix can become non diagonal (see SPE-1492)
 //        skew = ! rotation_90_degrees;
     } else
         skew = false;
@@ -759,7 +759,6 @@ bool trafos_differ_in_rotation_by_z_and_mirroring_by_xy_only(const Transform3d &
     double   d   = x.dot(y);
     return std::abs(d * d) < EPSILON * lx2 * ly2;
 }
-
 bool
 Point_in_triangle(Vec2f pt, Vec2f v1, Vec2f v2, Vec2f v3)
 {
@@ -779,7 +778,7 @@ Project_point_on_plane(Vec3f v1, Vec3f n, Point pt)
     if(n.z() == 0) {
         return -1;
     }
-    
+
     //unscale point for calculations
     float px = unscale<float>(pt.x());
     float py = unscale<float>(pt.y());

@@ -106,6 +106,7 @@ bool Print::invalidate_state_by_config_options(const ConfigOptionResolver & /* n
         "extruder_clearance_height",
         "extruder_clearance_radius",
         "extruder_colour",
+        "virtual_extruder",
         "extruder_offset",
         "extrusion_multiplier",
         "fan_always_on",
@@ -139,6 +140,7 @@ bool Print::invalidate_state_by_config_options(const ConfigOptionResolver & /* n
         "perimeter_acceleration",
         "post_process",
         "gcode_substitutions",
+        "gcode_binary",
         "printer_notes",
         "retract_before_travel",
         "retract_before_wipe",
@@ -204,7 +206,6 @@ bool Print::invalidate_state_by_config_options(const ConfigOptionResolver & /* n
             osteps.emplace_back(posSlice);
         } else if (
                opt_key == "complete_objects"
-            || opt_key == "parallel_objects"
             || opt_key == "filament_type"
             || opt_key == "first_layer_temperature"
             || opt_key == "filament_loading_speed"
@@ -234,8 +235,6 @@ bool Print::invalidate_state_by_config_options(const ConfigOptionResolver & /* n
             || opt_key == "wipe_tower_bridging"
             || opt_key == "wipe_tower_extra_spacing"
             || opt_key == "wipe_tower_no_sparse_layers"
-            || opt_key == "wipe_tower_speed"
-            || opt_key == "wipe_tower_wipe_starting_speed"
             || opt_key == "wipe_tower_extruder"
             || opt_key == "wiping_volumes_matrix"
             || opt_key == "parking_pos_retraction"
@@ -257,8 +256,6 @@ bool Print::invalidate_state_by_config_options(const ConfigOptionResolver & /* n
         } else if (
                opt_key == "first_layer_extrusion_width" 
             || opt_key == "min_layer_height"
-            || opt_key == "first_layer_flow_ratio"
-            || opt_key == "top_layer_flow_ratio"
             || opt_key == "max_layer_height"
             || opt_key == "gcode_resolution") {
             osteps.emplace_back(posPerimeters);
@@ -519,11 +516,11 @@ std::string Print::validate(std::vector<std::string>* warnings) const
     if (extruders.empty())
         return _u8L("The supplied settings will cause an empty print.");
 
-    if (m_config.complete_objects || m_config.parallel_objects) {
-        if (!m_config.parallel_objects && !sequential_print_vertical_clearance_valid(*this))
-            return _u8L("Some objects are too tall and cannot be printed without extruder collisions.");
+    if (m_config.complete_objects) {
         if (!sequential_print_horizontal_clearance_valid(*this, const_cast<Polygons*>(&m_sequential_print_clearance_contours)))
             return _u8L("Some objects are too close; your extruder will collide with them.");
+        if (!sequential_print_vertical_clearance_valid(*this))
+            return _u8L("Some objects are too tall and cannot be printed without extruder collisions.");
     }
     else
         const_cast<Polygons*>(&m_sequential_print_clearance_contours)->clear();
@@ -537,7 +534,7 @@ std::string Print::validate(std::vector<std::string>* warnings) const
         for (const PrintObject *object : m_objects)
             total_copies_count += object->instances().size();
         // #4043
-        if (total_copies_count > 1 && (! m_config.complete_objects.value || !m_config.parallel_objects.value))
+        if (total_copies_count > 1 && ! m_config.complete_objects.value)
             return _u8L("Only a single object may be printed at a time in Spiral Vase mode. "
                      "Either remove all but the last object, or enable sequential mode by \"complete_objects\".");
         assert(m_objects.size() == 1);
@@ -618,7 +615,7 @@ std::string Print::validate(std::vector<std::string>* warnings) const
             return _u8L("Ooze prevention is only supported with the wipe tower when 'single_extruder_multi_material' is off.");
         if (m_config.use_volumetric_e)
             return _u8L("The Wipe Tower currently does not support volumetric E (use_volumetric_e=0).");
-        if ((m_config.complete_objects || m_config.parallel_objects) && extruders.size() > 1)
+        if (m_config.complete_objects && extruders.size() > 1)
             return _u8L("The Wipe Tower is currently not supported for multimaterial sequential prints.");
         
         if (m_objects.size() > 1) {
@@ -700,8 +697,8 @@ std::string Print::validate(std::vector<std::string>* warnings) const
         	} else if (extrusion_width_min <= layer_height) {
         		err_msg = (boost::format(_u8L("%1%=%2% mm is too low to be printable at a layer height %3% mm")) % opt_key % extrusion_width_min % layer_height).str();
 				return false;
-			} else if (extrusion_width_max >= max_nozzle_diameter * 4.0) {
-                err_msg = (boost::format(_u8L("Excessive %1%=%2% mm to be printable with a nozzle diameter %3% mm")) % opt_key % extrusion_width_max % max_nozzle_diameter).str();
+			} else if (extrusion_width_max >= max_nozzle_diameter * 3.) {
+				err_msg = (boost::format(_u8L("Excessive %1%=%2% mm to be printable with a nozzle diameter %3% mm")) % opt_key % extrusion_width_max % max_nozzle_diameter).str();
 				return false;
 			}
 			return true;
@@ -959,8 +956,10 @@ void Print::process()
 
     tbb::parallel_for(tbb::blocked_range<size_t>(0, m_objects.size(), 1), [this](const tbb::blocked_range<size_t> &range) {
         for (size_t idx = range.begin(); idx < range.end(); ++idx) {
-            m_objects[idx]->generate_support_material();
-            m_objects[idx]->estimate_curled_extrusions();
+            PrintObject &obj = *m_objects[idx];
+            obj.generate_support_material();
+            obj.estimate_curled_extrusions();
+            obj.calculate_overhanging_perimeters();
         }
     }, tbb::simple_partitioner());
 
@@ -970,7 +969,7 @@ void Print::process()
         if (this->has_wipe_tower()) {
             //this->set_status(95, _u8L("Generating wipe tower"));
             this->_make_wipe_tower();
-        } else if (! this->config().complete_objects.value /*&& !this->config().parallel_objects.value*/) {
+        } else if (! this->config().complete_objects.value) {
         	// Initialize the tool ordering, so it could be used by the G-code preview slider for planning tool changes and filament switches.
         	m_tool_ordering = ToolOrdering(*this, -1, false);
             if (m_tool_ordering.empty() || m_tool_ordering.last_extruder() == unsigned(-1))
@@ -1013,12 +1012,13 @@ void Print::process()
         this->set_done(psSkirtBrim);
     }
 
-    std::optional<const FakeWipeTower*> wipe_tower_opt = {};
     if (this->has_wipe_tower()) {
-        m_fake_wipe_tower.set_pos_and_rotation({ m_config.wipe_tower_x, m_config.wipe_tower_y }, m_config.wipe_tower_rotation_angle);
-        wipe_tower_opt = std::make_optional<const FakeWipeTower*>(&m_fake_wipe_tower);
+        // These values have to be updated here, not during wipe tower generation.
+        // When the wipe tower is moved/rotated, it is not regenerated.
+        m_wipe_tower_data.position = { m_config.wipe_tower_x, m_config.wipe_tower_y };
+        m_wipe_tower_data.rotation_angle = m_config.wipe_tower_rotation_angle;
     }
-    auto conflictRes = ConflictChecker::find_inter_of_lines_in_diff_objs(m_objects, wipe_tower_opt);
+    auto conflictRes = ConflictChecker::find_inter_of_lines_in_diff_objs(objects(), m_wipe_tower_data);
 
     m_conflict_result = conflictRes;
     if (conflictRes.has_value())
@@ -1047,7 +1047,7 @@ std::string Print::export_gcode(const std::string& path_template, GCodeProcessor
     this->set_status(90, message);
 
     // Create GCode on heap, it has quite a lot of data.
-    std::unique_ptr<GCode> gcode(new GCode);
+    std::unique_ptr<GCodeGenerator> gcode(new GCodeGenerator);
     gcode->do_export(this, path.c_str(), result, thumbnail_cb);
 
     if (m_conflict_result.has_value())
@@ -1163,13 +1163,15 @@ void Print::_make_skirt()
         }
         // Extrude the skirt loop.
         ExtrusionLoop eloop(elrSkirt);
-        eloop.paths.emplace_back(ExtrusionPath(
-            ExtrusionPath(
+        eloop.paths.emplace_back(
+            ExtrusionAttributes{
                 ExtrusionRole::Skirt,
-                (float)mm3_per_mm,         // this will be overridden at G-code export time
-                flow.width(),
-				(float)first_layer_height  // this will be overridden at G-code export time
-            )));
+                ExtrusionFlow{
+                    float(mm3_per_mm),        // this will be overridden at G-code export time
+                    flow.width(),
+                    float(first_layer_height) // this will be overridden at G-code export time
+                }
+            });
         eloop.paths.back().polyline = loop.split_at_first_point();
         m_skirt.append(eloop);
         if (m_config.min_skirt_length.value > 0) {
@@ -1227,7 +1229,7 @@ Points Print::first_layer_wipe_tower_corners() const
         double width = m_config.wipe_tower_width + 2*m_wipe_tower_data.brim_width;
         double depth = m_wipe_tower_data.depth + 2*m_wipe_tower_data.brim_width;
         Vec2d pt0(-m_wipe_tower_data.brim_width, -m_wipe_tower_data.brim_width);
-        
+
         // First the corners.
         std::vector<Vec2d> pts = { pt0,
                                    Vec2d(pt0.x()+width, pt0.y()),
@@ -1272,7 +1274,7 @@ void Print::alert_when_supports_needed()
         auto issue_to_alert_message = [](SupportSpotsGenerator::SupportPointCause cause, bool critical) {
             std::string message;
             switch (cause) {
-            //TRN Alert when support is needed. Describes that the model has long bridging extrusions which may print badly 
+            //TRN Alert when support is needed. Describes that the model has long bridging extrusions which may print badly
             case SupportSpotsGenerator::SupportPointCause::LongBridge: message = _u8L("Long bridging extrusions"); break;
             //TRN Alert when support is needed. Describes bridge anchors/turns in the air, which will definitely print badly
             case SupportSpotsGenerator::SupportPointCause::FloatingBridgeAnchor: message = _u8L("Floating bridge anchors"); break;
@@ -1289,7 +1291,7 @@ void Print::alert_when_supports_needed()
             case SupportSpotsGenerator::SupportPointCause::SeparationFromBed: message = _u8L("Low bed adhesion"); break;
             //TRN Alert when support is needed. Describes that the object has part that is not connected to the bed and will not print at all without supports.
             case SupportSpotsGenerator::SupportPointCause::UnstableFloatingPart: message = _u8L("Floating object part"); break;
-            //TRN Alert when support is needed. Describes that the object has thin part that may brake during printing 
+            //TRN Alert when support is needed. Describes that the object has thin part that may brake during printing
             case SupportSpotsGenerator::SupportPointCause::WeakObjectPart: message = _u8L("Thin fragile part"); break;
             }
 
@@ -1297,7 +1299,7 @@ void Print::alert_when_supports_needed()
         };
 
         // TRN this translation rule is used to translate lists of uknown size on single line. The first argument is element of the list,
-        // the second argument may be element or rest of the list. For most languages, this does not need translation, but some use different 
+        // the second argument may be element or rest of the list. For most languages, this does not need translation, but some use different
         // separator than comma and some use blank space in front of the separator.
         auto single_line_list_rule = L("%1%, %2%");
         auto multiline_list_rule   = "%1%\n%2%";
@@ -1505,9 +1507,6 @@ void Print::_make_wipe_tower()
     // Initialize the wipe tower.
     WipeTower wipe_tower(m_config, m_default_region_config, wipe_volumes, m_wipe_tower_data.tool_ordering.first_extruder());
 
-    //wipe_tower.set_retract();
-    //wipe_tower.set_zhop();
-
     // Set the extruder & material properties at the wipe tower object.
     for (size_t i = 0; i < m_config.nozzle_diameter.size(); ++ i)
         wipe_tower.set_extruder(i, m_config);
@@ -1576,10 +1575,9 @@ void Print::_make_wipe_tower()
 
     m_wipe_tower_data.used_filament = wipe_tower.get_used_filament();
     m_wipe_tower_data.number_of_toolchanges = wipe_tower.get_number_of_toolchanges();
-    const Vec3d origin = Vec3d::Zero();
-    m_fake_wipe_tower.set_fake_extrusion_data(wipe_tower.position(), wipe_tower.width(), wipe_tower.get_wipe_tower_height(), config().first_layer_height, m_wipe_tower_data.depth,
-                                              m_wipe_tower_data.z_and_depth_pairs, m_wipe_tower_data.brim_width, config().wipe_tower_rotation_angle, config().wipe_tower_cone_angle, {scale_(origin.x()), scale_(origin.y())});
-
+    m_wipe_tower_data.width = wipe_tower.width();
+    m_wipe_tower_data.first_layer_height = config().first_layer_height;
+    m_wipe_tower_data.cone_angle = config().wipe_tower_cone_angle;
 }
 
 // Generate a recommended G-code output file name based on the format template, default extension, and template parameters
@@ -1594,6 +1592,26 @@ std::string Print::output_filename(const std::string &filename_base) const
     config.set_key_value("default_output_extension", new ConfigOptionString(".gcode"));
     return this->PrintBase::output_filename(m_config.output_filename_format.value, ".gcode", filename_base, &config);
 }
+
+const std::string PrintStatistics::FilamentUsedG     = "filament used [g]";
+const std::string PrintStatistics::FilamentUsedGMask = "; filament used [g] =";
+
+const std::string PrintStatistics::TotalFilamentUsedG          = "total filament used [g]";
+const std::string PrintStatistics::TotalFilamentUsedGMask      = "; total filament used [g] =";
+const std::string PrintStatistics::TotalFilamentUsedGValueMask = "; total filament used [g] = %.2lf\n";
+
+const std::string PrintStatistics::FilamentUsedCm3     = "filament used [cm3]";
+const std::string PrintStatistics::FilamentUsedCm3Mask = "; filament used [cm3] =";
+
+const std::string PrintStatistics::FilamentUsedMm     = "filament used [mm]";
+const std::string PrintStatistics::FilamentUsedMmMask = "; filament used [mm] =";
+
+const std::string PrintStatistics::FilamentCost     = "filament cost";
+const std::string PrintStatistics::FilamentCostMask = "; filament cost =";
+
+const std::string PrintStatistics::TotalFilamentCost          = "total filament cost";
+const std::string PrintStatistics::TotalFilamentCostMask      = "; total filament cost =";
+const std::string PrintStatistics::TotalFilamentCostValueMask = "; total filament cost = %.2lf\n";
 
 DynamicConfig PrintStatistics::config() const
 {
@@ -1610,10 +1628,6 @@ DynamicConfig PrintStatistics::config() const
     config.set_key_value("total_weight",              new ConfigOptionFloat(this->total_weight));
     config.set_key_value("total_wipe_tower_cost",     new ConfigOptionFloat(this->total_wipe_tower_cost));
     config.set_key_value("total_wipe_tower_filament", new ConfigOptionFloat(this->total_wipe_tower_filament));
-    config.set_key_value("individual_extruded_volume",  new ConfigOptionFloats(this->individual_extruded_volume));
-    config.set_key_value("individual_used_filament",    new ConfigOptionFloats(this->individual_used_filament));
-    config.set_key_value("individual_weight",           new ConfigOptionFloats(this->individual_weight));
-    config.set_key_value("individual_cost",             new ConfigOptionFloats(this->individual_cost));
     config.set_key_value("initial_tool",              new ConfigOptionInt(int(this->initial_extruder_id)));
     config.set_key_value("initial_extruder",          new ConfigOptionInt(int(this->initial_extruder_id)));
     config.set_key_value("initial_filament_type",     new ConfigOptionString(this->initial_filament_type));
@@ -1630,7 +1644,6 @@ DynamicConfig PrintStatistics::placeholders()
     for (const std::string &key : { 
         "print_time", "normal_print_time", "silent_print_time", 
         "used_filament", "extruded_volume", "total_cost", "total_weight", 
-        "individual_extruded_volume", "individual_used_filament", "individual_weight", "individual_cost",
         "total_toolchanges", "total_wipe_tower_cost", "total_wipe_tower_filament",
         "initial_tool", "initial_extruder", "initial_filament_type", "printing_filament_types", "num_printing_extruders" })
         config.set_key_value(key, new ConfigOptionString(std::string("{") + key + "}"));
@@ -1653,80 +1666,5 @@ std::string PrintStatistics::finalize_output_path(const std::string &path_in) co
     return final_path;
 }
 
-    std::vector<ExtrusionPaths> FakeWipeTower::getFakeExtrusionPathsFromWipeTower() const
-    {
-        float h = height;
-        float lh = layer_height;
-        int   d = scale_(depth);
-        int   w = scale_(width);
-        int   bd = scale_(brim_width);
-        Point minCorner = { -bd, -bd };
-        Point maxCorner = { minCorner.x() + w + bd, minCorner.y() + d + bd };
-
-        const auto [cone_base_R, cone_scale_x] = WipeTower::get_wipe_tower_cone_base(width, height, depth, cone_angle);
-
-        std::vector<ExtrusionPaths> paths;
-        for (float hh = 0.f; hh < h; hh += lh) {
-            
-            if (hh != 0.f) {
-                // The wipe tower may be getting smaller. Find the depth for this layer.
-                size_t i = 0;
-                for (i=0; i<z_and_depth_pairs.size()-1; ++i)
-                    if (hh >= z_and_depth_pairs[i].first && hh < z_and_depth_pairs[i+1].first)
-                        break;
-                d = scale_(z_and_depth_pairs[i].second);
-                minCorner = {0.f, -d/2 + scale_(z_and_depth_pairs.front().second/2.f)};
-                maxCorner = { minCorner.x() + w, minCorner.y() + d };
-            }
-
-
-            ExtrusionPath path(ExtrusionRole::WipeTower, 0.0, 0.0, lh);
-            path.polyline = { minCorner, {maxCorner.x(), minCorner.y()}, maxCorner, {minCorner.x(), maxCorner.y()}, minCorner };
-            paths.push_back({ path });
-
-            // We added the border, now add several parallel lines so we can detect an object that is fully inside the tower.
-            // For now, simply use fixed spacing of 3mm.
-            for (coord_t y=minCorner.y()+scale_(3.); y<maxCorner.y(); y+=scale_(3.)) {
-                path.polyline = { {minCorner.x(), y}, {maxCorner.x(), y} };
-                paths.back().emplace_back(path);
-            }
-
-            // And of course the stabilization cone and its base...
-            if (cone_base_R > 0.) {
-                path.polyline.clear();
-                double r = cone_base_R * (1 - hh/height);
-                for (double alpha=0; alpha<2.01*M_PI; alpha+=2*M_PI/20.)
-                    path.polyline.points.emplace_back(Point::new_scale(width/2. + r * std::cos(alpha)/cone_scale_x, depth/2. + r * std::sin(alpha)));
-                paths.back().emplace_back(path);
-                if (hh == 0.f) { // Cone brim.
-                    for (float bw=brim_width; bw>0.f; bw-=3.f) {
-                        path.polyline.clear();
-                        for (double alpha=0; alpha<2.01*M_PI; alpha+=2*M_PI/20.) // see load_wipe_tower_preview, where the same is a bit clearer
-                            path.polyline.points.emplace_back(Point::new_scale(
-                                width/2. + cone_base_R * std::cos(alpha)/cone_scale_x * (1. + cone_scale_x*bw/cone_base_R),
-                                depth/2. + cone_base_R * std::sin(alpha) * (1. + bw/cone_base_R))
-                            );
-                        paths.back().emplace_back(path);
-                    }
-                }
-            }
-
-            // Only the first layer has brim.
-            if (hh == 0.f) {
-                minCorner = minCorner + Point(bd, bd);
-                maxCorner = maxCorner - Point(bd, bd);
-            }
-        }
-
-        // Rotate and translate the tower into the final position.
-        for (ExtrusionPaths& ps : paths) {
-            for (ExtrusionPath& p : ps) {
-                p.polyline.rotate(Geometry::deg2rad(rotation_angle));
-                p.polyline.translate(scale_(pos.x()), scale_(pos.y()));
-            }
-        }
-
-        return paths;
-    }
 
 } // namespace Slic3r

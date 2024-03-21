@@ -98,10 +98,12 @@ GalleryDialog::GalleryDialog(wxWindow* parent) :
 #endif
 
     wxStdDialogButtonSizer* buttons = this->CreateStdDialogButtonSizer(wxOK | wxCLOSE);
-    m_ok_btn = static_cast<wxButton*>(FindWindowById(wxID_OK, this));
+    wxGetApp().SetWindowVariantForButton(buttons->GetCancelButton());
+    m_ok_btn = buttons->GetAffirmativeButton();
+    wxGetApp().SetWindowVariantForButton(m_ok_btn);
     m_ok_btn->Bind(wxEVT_UPDATE_UI, [this](wxUpdateUIEvent& evt) { evt.Enable(!m_selected_items.empty()); });
 
-    static_cast<wxButton*>(FindWindowById(wxID_CLOSE, this))->Bind(wxEVT_BUTTON, [this](wxCommandEvent&){ this->EndModal(wxID_CLOSE); });
+    buttons->GetCancelButton()->Bind(wxEVT_BUTTON, [this](wxCommandEvent&){ this->EndModal(wxID_CLOSE); });
     this->SetEscapeId(wxID_CLOSE);
     auto add_btn = [this, buttons]( size_t pos, int& ID, wxString title, wxString tooltip,
                                     void (GalleryDialog::* method)(wxEvent&), 
@@ -109,6 +111,7 @@ GalleryDialog::GalleryDialog(wxWindow* parent) :
         ID = NewControlId();
         wxButton* btn = new wxButton(this, ID, title);
         btn->SetToolTip(tooltip);
+        wxGetApp().SetWindowVariantForButton(btn);
         btn->Bind(wxEVT_UPDATE_UI, [enable_fn](wxUpdateUIEvent& evt) { evt.Enable(enable_fn()); });
         buttons->Insert(pos, btn, 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, BORDER_W);
         this->Bind(wxEVT_BUTTON, method, this, ID);
@@ -339,8 +342,8 @@ void GalleryDialog::load_label_icon_list()
 
         std::vector<std::string> sorted_names;
         for (auto& dir_entry : fs::directory_iterator(dir)) {
-            TriangleMesh mesh;
-            if ((is_gallery_file(dir_entry, ".stl") && mesh.ReadSTLFile(dir_entry.path().string().c_str())) || 
+            std::vector<std::pair<std::string,TriangleMesh>> mesh;
+            if ((is_gallery_file(dir_entry, ".stl") && TriangleMesh().ReadSTLFile(dir_entry.path().string().c_str())) || 
                 (is_gallery_file(dir_entry, ".obj") && load_obj(dir_entry.path().string().c_str(), &mesh) )    )
                 sorted_names.push_back(dir_entry.path().filename().string());
         }
@@ -575,8 +578,8 @@ bool GalleryDialog::load_files(const wxArrayString& input_files)
     for (size_t i = 0; i < input_files.size(); ++i) {
         std::string input_file = into_u8(input_files.Item(i));
 
-        TriangleMesh mesh; 
-        if (is_gallery_file(input_file, ".stl") && !mesh.ReadSTLFile(input_file.c_str())) {
+        std::vector<std::pair<std::string,TriangleMesh>> mesh; 
+        if (is_gallery_file(input_file, ".stl") && !TriangleMesh().ReadSTLFile(input_file.c_str())) {
             show_warning(format_wxstr(_L("Loading of the \"%1%\""), input_file), "STL");
             continue;
         }

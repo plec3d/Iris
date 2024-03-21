@@ -45,6 +45,8 @@
 #include "PhysicalPrinterDialog.hpp"
 #include "MsgDialog.hpp"
 
+#include "Widgets/ComboBox.hpp"
+
 // A workaround for a set of issues related to text fitting into gtk widgets:
 // See e.g.: https://github.com/prusa3d/PrusaSlicer/issues/4584
 #if defined(__WXGTK20__) || defined(__WXGTK3__)
@@ -320,7 +322,7 @@ void PresetComboBox::update(std::string select_preset_name)
         if (i + 1 == m_collection->num_default_presets())
             set_label_marker(Append(separator(L("System presets")), NullBitmapBndl()));
     }
-    
+
     if (!system_presets.empty())
     {
         std::sort(system_presets.begin(), system_presets.end(), [](const PresetData& a, const PresetData& b) {
@@ -359,7 +361,7 @@ void PresetComboBox::update(std::string select_preset_name)
             set_label_marker(Append(it->name, *it->bitmap), LABEL_ITEM_DISABLED);
         }
     }
-    
+
     update_selection();
     Thaw();
 }
@@ -437,6 +439,7 @@ void PresetComboBox::update_from_bundle()
 void PresetComboBox::msw_rescale()
 {
     m_em_unit = em_unit(this);
+    ::ComboBox::Rescale();
 }
 
 void PresetComboBox::sys_color_changed()
@@ -718,7 +721,7 @@ void PlaterPresetComboBox::switch_to_tab()
     {
         //In a case of a multi-material printing, for editing another Filament Preset
         //it's needed to select this preset for the "Filament settings" Tab
-        if (m_type == Preset::TYPE_FILAMENT && wxGetApp().extruders_edited_cnt() > 1 && 
+        if (m_type == Preset::TYPE_FILAMENT && wxGetApp().extruders_edited_cnt() > 1 &&
             !dynamic_cast<TabFilament*>(wxGetApp().get_tab(m_type))->set_active_extruder(m_extruder_idx))
             // do nothing, if we can't set new extruder and select new preset
             return;
@@ -790,7 +793,7 @@ void PlaterPresetComboBox::show_edit_menu()
             [this](wxCommandEvent&) { this->change_extruder_color(); }, "funnel", menu, []() { return true; }, wxGetApp().plater());
 #endif //__linux__
         append_menu_item(menu, wxID_ANY, _L("Show/Hide template presets"), "",
-            [this](wxCommandEvent&) { wxGetApp().open_preferences("no_templates", "General"); }, "spool", menu, []() { return true; }, wxGetApp().plater());
+            [](wxCommandEvent&) { wxGetApp().open_preferences("no_templates", "General"); }, "spool", menu, []() { return true; }, wxGetApp().plater());
 
         wxGetApp().plater()->PopupMenu(menu);
         return;
@@ -860,7 +863,7 @@ void PlaterPresetComboBox::update()
 
     // Show wide icons if the currently selected preset is not compatible with the current printer,
     // and draw a red flag in front of the selected preset.
-    bool wide_icons = m_type == Preset::TYPE_FILAMENT ? 
+    bool wide_icons = m_type == Preset::TYPE_FILAMENT ?
                       extruder_filaments.get_selected_filament()     && !extruder_filaments.get_selected_filament()->is_compatible :
                       m_collection->get_selected_idx() != size_t(-1) && !m_collection->get_selected_preset().is_compatible;
 
@@ -919,7 +922,7 @@ void PlaterPresetComboBox::update()
         }
 
         auto bmp = get_bmp(bitmap_key, wide_icons, bitmap_type_name,
-                                is_compatible, preset.is_system || preset.is_default, 
+                                is_compatible, preset.is_system || preset.is_default,
                                 single_bar, filament_rgb, extruder_rgb, material_rgb);
         assert(bmp);
 
@@ -952,13 +955,13 @@ void PlaterPresetComboBox::update()
         if (i + 1 == m_collection->num_default_presets())
             set_label_marker(Append(separator(L("System presets")), NullBitmapBndl()));
     }
-    
+
     if(!system_presets.empty())
     {
         std::sort(system_presets.begin(), system_presets.end(), [](const PresetData& a, const PresetData& b) {
             return a.lower_name < b.lower_name;
             });
-        
+
         for (std::vector<PresetData>::iterator it = system_presets.begin(); it != system_presets.end(); ++it) {
             Append(it->name, *it->bitmap);
             validate_selection(it->name == selected_user_preset);
@@ -1146,7 +1149,7 @@ void TabPresetComboBox::update()
     const ExtruderFilaments& extruder_filaments = m_preset_bundle->extruders_filaments[m_active_extruder_idx];
 
     const std::deque<Preset>& presets = m_collection->get_presets();
-    
+
     struct PresetData {
         wxString        name;
         wxString        lower_name;
@@ -1217,7 +1220,7 @@ void TabPresetComboBox::update()
             set_label_marker(Append(separator(L("System presets")), NullBitmapBndl()));
     }
    
-    if (!system_presets.empty()) 
+    if (!system_presets.empty())
     {
         std::sort(system_presets.begin(), system_presets.end(), [](const PresetData& a, const PresetData& b) {
             return a.lower_name < b.lower_name;
@@ -1230,7 +1233,7 @@ void TabPresetComboBox::update()
             validate_selection(it->name == selected);
         }
     }
-    
+
     if (!nonsys_presets.empty())
     {
         std::sort(nonsys_presets.begin(), nonsys_presets.end(), [](const PresetData& a, const PresetData& b) {
@@ -1246,7 +1249,7 @@ void TabPresetComboBox::update()
         }
     }
 
-    if (!template_presets.empty()) 
+    if (!template_presets.empty())
     {
         std::sort(template_presets.begin(), template_presets.end(), [](const PresetData& a, const PresetData& b) {
             return a.lower_name < b.lower_name;

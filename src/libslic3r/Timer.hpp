@@ -64,7 +64,7 @@ namespace Timing {
     class TimeLimitAlarm {
     public:
         TimeLimitAlarm(uint64_t time_limit_nanoseconds, std::string_view limit_exceeded_message) :
-            m_time_limit_nanoseconds(time_limit_nanoseconds), m_limit_exceeded_message(limit_exceeded_message) { 
+            m_time_limit_nanoseconds(time_limit_nanoseconds), m_limit_exceeded_message(limit_exceeded_message) {
             m_timer.start();
         }
         ~TimeLimitAlarm() {

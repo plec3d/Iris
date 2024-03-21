@@ -15,7 +15,7 @@ namespace{
 using namespace Slic3r;
 void actualize(RaycastManager::Meshes &meshes, const ModelVolumePtrs &volumes, const RaycastManager::ISkip *skip, RaycastManager::Meshes *input = nullptr);
 const AABBMesh * get_mesh(const RaycastManager::Meshes &meshes, size_t volume_id);
-RaycastManager::TrKey create_key(const ModelVolume& volume, const ModelInstance& instance){ 
+RaycastManager::TrKey create_key(const ModelVolume& volume, const ModelInstance& instance){
     return std::make_pair(instance.id().id, volume.id().id); }
 RaycastManager::TrItems::iterator find(RaycastManager::TrItems &items, const RaycastManager::TrKey &key);
 RaycastManager::TrItems::const_iterator find(const RaycastManager::TrItems &items, const RaycastManager::TrKey &key);
@@ -93,7 +93,7 @@ void RaycastManager::actualize(const ModelInstance &instance, const ISkip *skip,
             // add new transformation
             m_transformations.emplace_back(key, transformation);
             need_sort = true;
-        }        
+        }
     }
 
     // clean other transformation
@@ -102,11 +102,11 @@ void RaycastManager::actualize(const ModelInstance &instance, const ISkip *skip,
     if (need_sort)
         std::sort(m_transformations.begin(), m_transformations.end(), ::is_lower);
 }
- 
+
 std::optional<RaycastManager::Hit> RaycastManager::first_hit(const Vec3d& point, const Vec3d& direction, const ISkip *skip) const
 {
     // Improve: it is not neccessaru to use AABBMesh and calc normal for every hit
-    
+
     // Results
     const AABBMesh *hit_mesh = nullptr;
     double hit_squared_distance = 0.;
@@ -186,7 +186,8 @@ std::optional<RaycastManager::Hit> RaycastManager::closest_hit(const Vec3d &poin
         std::vector<AABBMesh::hit_result> hits_neg = mesh->query_ray_hits(point_negative, -mesh_direction);
         hits.insert(hits.end(), std::make_move_iterator(hits_neg.begin()), std::make_move_iterator(hits_neg.end()));
         for (const AABBMesh::hit_result &hit : hits) { 
-            double squared_distance = (mesh_point - hit.position()).squaredNorm();
+            Vec3d diff = mesh_point - hit.position();
+            double squared_distance = diff.squaredNorm();
             if (closest.has_value() &&
                 closest->squared_distance < squared_distance)
                 continue;
@@ -207,7 +208,7 @@ std::optional<RaycastManager::ClosePoint> RaycastManager::closest(const Vec3d &p
         if (mesh == nullptr) continue;
         Transform3d tr_inv = transformation.inverse();
         Vec3d mesh_point = tr_inv * point;
-                
+
         int   face_idx = 0;
         Vec3d closest_point;
         Vec3d pointd = point.cast<double>();
@@ -241,7 +242,7 @@ void actualize(RaycastManager::Meshes &meshes, const ModelVolumePtrs &volumes, c
         size_t oid = volume->id().id;
         if (skip != nullptr && skip->skip(oid))
             continue;
-        auto is_oid = [oid](const RaycastManager::Mesh &it) { return oid == it.first; };        
+        auto is_oid = [oid](const RaycastManager::Mesh &it) { return oid == it.first; };
         if (auto item = std::find_if(meshes.begin(), meshes.end(), is_oid);
             item != meshes.end()) {
             size_t index = item - meshes.begin();
@@ -254,7 +255,7 @@ void actualize(RaycastManager::Meshes &meshes, const ModelVolumePtrs &volumes, c
             auto input = std::find_if(inputs->begin(), inputs->end(), is_oid);
             if (input != inputs->end()) {
                 meshes.emplace_back(std::move(*input));
-                need_sort = true;    
+                need_sort = true;
                 continue;
             }
         }
@@ -263,7 +264,7 @@ void actualize(RaycastManager::Meshes &meshes, const ModelVolumePtrs &volumes, c
         bool calculate_epsilon = true;
         auto mesh = std::make_unique<AABBMesh>(volume->mesh(), calculate_epsilon);
         meshes.emplace_back(std::make_pair(oid, std::move(mesh)));
-        need_sort = true;        
+        need_sort = true;
     }
 
     // clean other raycasters
@@ -361,6 +362,25 @@ std::optional<RaycastManager::Hit> ray_from_camera(const RaycastManager        &
     Vec3d direction;
     CameraUtils::ray_from_screen_pos(camera, mouse_pos, point, direction);
     return raycaster.first_hit(point, direction, skip);
+}
+
+RaycastManager::AllowVolumes create_condition(const ModelVolumePtrs &volumes, const ObjectID &disallowed_volume_id) {
+    std::vector<size_t> allowed_volumes_id;
+    if (volumes.size() > 1) {
+        allowed_volumes_id.reserve(volumes.size() - 1);
+        for (const ModelVolume *v : volumes) {
+            // drag only above part not modifiers or negative surface
+            if (!v->is_model_part())
+                continue;
+
+            // skip actual selected object
+            if (v->id() == disallowed_volume_id)
+                continue;
+
+            allowed_volumes_id.emplace_back(v->id().id);
+        }
+    }
+    return RaycastManager::AllowVolumes(allowed_volumes_id);
 }
 
 } // namespace Slic3r::GUI

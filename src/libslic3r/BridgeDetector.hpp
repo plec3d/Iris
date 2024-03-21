@@ -6,11 +6,11 @@
 #ifndef slic3r_BridgeDetector_hpp_
 #define slic3r_BridgeDetector_hpp_
 
+#include "PrintConfig.hpp"
 #include "ClipperUtils.hpp"
 #include "Line.hpp"
 #include "Point.hpp"
 #include "Polygon.hpp"
-#include "PrintConfig.hpp"
 #include "Polyline.hpp"
 #include "PrincipalComponents2D.hpp"
 #include "libslic3r.h"
@@ -47,7 +47,7 @@ public:
     BridgeDetector(ExPolygon _expolygon, const ExPolygons &_lower_slices, coord_t _extrusion_width);
     BridgeDetector(const ExPolygons &_expolygons, const ExPolygons &_lower_slices, coord_t _extrusion_width);
     // If bridge_direction_override != 0, then the angle is used instead of auto-detect.
-    bool detect_angle(double bridge_direction_override = 0.);
+    bool detect_angle(double bridge_direction_override = 0, const PrintRegionConfig *params = nullptr);
     Polygons coverage(double angle = -1, bool precise = true) const;
     void unsupported_edges(double angle, Polylines* unsupported) const;
     Polylines unsupported_edges(double angle = -1) const;
@@ -86,7 +86,6 @@ public:
     // Closed polygons representing the supporting areas.
     ExPolygons _anchor_regions;
 };
-
 
 //return ideal bridge direction and unsupported bridge endpoints distance.
 inline std::tuple<Vec2d, double> detect_bridging_direction(const Lines &floating_edges, const Polygons &overhang_area)

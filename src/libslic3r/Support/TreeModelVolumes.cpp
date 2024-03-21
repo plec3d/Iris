@@ -472,7 +472,7 @@ void TreeModelVolumes::calculateCollision(const coord_t radius, const LayerIndex
             // 2) Sum over top / bottom ranges.
             const bool processing_last_mesh = outline_idx == layer_outline_indices.size();
             tbb::parallel_for(tbb::blocked_range<LayerIndex>(data.begin(), data.end()),
-                [&collision_areas_offsetted, &outlines, &machine_border = m_machine_border, &anti_overhang = m_anti_overhang, radius, 
+                [&collision_areas_offsetted, &outlines, &machine_border = m_machine_border, &anti_overhang = m_anti_overhang, radius,
                     xy_distance, z_distance_bottom_layers, z_distance_top_layers, min_resolution = m_min_resolution, &data, processing_last_mesh, &throw_on_cancel]
                 (const tbb::blocked_range<LayerIndex>& range) {
                     for (LayerIndex layer_idx = range.begin(); layer_idx != range.end(); ++ layer_idx) {
@@ -518,8 +518,8 @@ void TreeModelVolumes::calculateCollision(const coord_t radius, const LayerIndex
                                     // not support an overhang<90 degree than to risk fusing to it.
                                 append(collisions, offset(union_ex(collision_areas_original), radius + required_range_x, ClipperLib::jtMiter, 1.2));
                             }
-                        collisions = processing_last_mesh && layer_idx < int(anti_overhang.size()) ? 
-                                union_(collisions, offset(union_ex(anti_overhang[layer_idx]), radius, ClipperLib::jtMiter, 1.2)) : 
+                        collisions = processing_last_mesh && layer_idx < int(anti_overhang.size()) ?
+                                union_(collisions, offset(union_ex(anti_overhang[layer_idx]), radius, ClipperLib::jtMiter, 1.2)) :
                                 union_(collisions);
                         auto &dst = data[layer_idx];
                         if (processing_last_mesh) {
@@ -546,7 +546,7 @@ void TreeModelVolumes::calculateCollision(const coord_t radius, const LayerIndex
                         const Polygons &below   = outlines[layer_idx_below];
                         Polygons placable = diff(
                             // Inflate the surface to sit on by the separation distance to increase chance of a support being placed on a sloped surface.
-                            offset(below, xy_distance), 
+                            offset(below, xy_distance),
                             layer_idx_below < int(anti_overhang.size()) ? union_(current, anti_overhang[layer_idx_below]) : current);
                         auto &dst     = data_placeable[layer_idx];
                         if (processing_last_mesh) {

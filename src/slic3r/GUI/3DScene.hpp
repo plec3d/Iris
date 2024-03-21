@@ -15,12 +15,14 @@
 #include "libslic3r/libslic3r.h"
 #include "libslic3r/Point.hpp"
 #include "libslic3r/Line.hpp"
+#include "libslic3r/Model.hpp"
 #include "libslic3r/TriangleMesh.hpp"
 #include "libslic3r/Utils.hpp"
 #include "libslic3r/Geometry.hpp"
 #include "libslic3r/Color.hpp"
 
 #include "GLModel.hpp"
+#include "GLShader.hpp"
 #include "MeshUtils.hpp"
 
 #include <functional>
@@ -40,6 +42,10 @@
     #define glsafe(cmd) cmd
     #define glcheck()
 #endif // HAS_GLSAFE
+extern float                          FullyTransparentMaterialThreshold;
+extern float                          FullTransparentModdifiedToFixAlpha;
+extern Slic3r::ColorRGBA              adjust_color_for_rendering(const Slic3r::ColorRGBA &colors);
+extern std::vector<Slic3r::ColorRGBA> get_extruders_colors();
 
 namespace Slic3r {
 class SLAPrintObject;
@@ -70,7 +76,8 @@ public:
     static const ColorRGBA SLA_PAD_COLOR;
     static const ColorRGBA NEUTRAL_COLOR;
     static const std::array<ColorRGBA, 4> MODEL_COLOR;
-
+    static float explosion_ratio;
+    static float last_explosion_ratio;
     enum EHoverState : unsigned char
     {
         HS_None,
@@ -200,6 +207,8 @@ public:
     GUI::GLModel            model;
     // raycaster used for picking
     std::unique_ptr<GUI::MeshRaycaster> mesh_raycaster;
+    mutable std::vector<GUI::GLModel> mmuseg_models;
+    mutable ObjectBase::Timestamp       mmuseg_ts;
     // Ranges of triangle and quad indices to be rendered.
     std::pair<size_t, size_t>   tverts_range;
 
@@ -322,7 +331,7 @@ public:
     bool                is_below_printbed() const;
     void                render_sinking_contours();
     void                render_non_manifold_edges();
-
+    void simple_render(GLShaderProgram* shader, ModelObjectPtrs& model_objects, std::vector<ColorRGBA> extruder_colors);
     // Return an estimate of the memory consumed by this class.
     size_t 				cpu_memory_used() const {
           return sizeof(*this) + this->model.cpu_memory_used() + this->print_zs.capacity() * sizeof(coordf_t) +

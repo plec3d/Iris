@@ -1,13 +1,7 @@
 
-![iris](https://github.com/plec3d/Iris/assets/142444700/7979822c-495c-4fda-8288-1a58f432f9cd)
+![PrusaSlicer logo](/resources/icons/PrusaSlicer.png?raw=true)
 
-
-### Iris -- PLEC Multi-material Color slicer
-___
-
-TBD
-
-____
+# PrusaSlicer
 
 You may want to check the [PrusaSlicer project page](https://www.prusa3d.com/prusaslicer/).
 Prebuilt Windows, OSX and Linux binaries are available through the [git releases page](https://github.com/prusa3d/PrusaSlicer/releases) or from the [Prusa3D downloads page](https://www.prusa3d.com/drivers/). There are also [3rd party Linux builds available](https://github.com/prusa3d/PrusaSlicer/wiki/PrusaSlicer-on-Linux---binary-distributions).
@@ -25,10 +19,7 @@ the [documentation directory](doc/) for more information.
 
 ### What language is it written in?
 
-All user facing code is written in C++, and some legacy code as well as unit
-tests are written in Perl. Perl is not required for either development or use
-of PrusaSlicer.
-
+All user facing code is written in C++.
 The slicing core is the `libslic3r` library, which can be built and used in a standalone way.
 The command line interface is a thin wrapper over `libslic3r`.
 

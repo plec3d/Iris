@@ -22,7 +22,7 @@ template BoundingBox3Base<Vec3d>::BoundingBox3Base(const std::vector<Vec3d> &poi
 
 void BoundingBox::polygon(Polygon* polygon) const
 {
-    polygon->points = { 
+    polygon->points = {
         this->min,
         { this->max.x(), this->min.y() },
         this->max,

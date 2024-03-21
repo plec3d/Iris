@@ -31,6 +31,8 @@ namespace Slic3r {
 
 class BoundingBox;
 class BoundingBoxf;
+class Line;
+class MultiPoint;
 class Point;
 using Vector = Point;
 
@@ -163,6 +165,21 @@ Pointf3s transform(const Pointf3s& points, const Transform3d& t);
 /// <returns>Is positive determinant</returns>
 inline bool has_reflection(const Transform3d &transform) { return transform.matrix().determinant() < 0; }
 
+/// <summary>
+/// Getter on base of transformation matrix
+/// </summary>
+/// <param name="index">column index</param>
+/// <param name="transform">source transformation</param>
+/// <returns>Base of transformation matrix</returns>
+inline const Vec3d get_base(unsigned index, const Transform3d &transform) { return transform.linear().col(index); }
+inline const Vec3d get_x_base(const Transform3d &transform) { return get_base(0, transform); }
+inline const Vec3d get_y_base(const Transform3d &transform) { return get_base(1, transform); }
+inline const Vec3d get_z_base(const Transform3d &transform) { return get_base(2, transform); }
+inline const Vec3d get_base(unsigned index, const Transform3d::LinearPart &transform) { return transform.col(index); }
+inline const Vec3d get_x_base(const Transform3d::LinearPart &transform) { return get_base(0, transform); }
+inline const Vec3d get_y_base(const Transform3d::LinearPart &transform) { return get_base(1, transform); }
+inline const Vec3d get_z_base(const Transform3d::LinearPart &transform) { return get_base(2, transform); }
+
 template<int N, class T> using Vec = Eigen::Matrix<T,  N, 1, Eigen::DontAlign, N, 1>;
 
 class Point : public Vec2crd
@@ -170,21 +187,19 @@ class Point : public Vec2crd
 public:
     using coord_type = coord_t;
 
-    coord_t nonplanar_z { -1 };
-
     Point() : Vec2crd(0, 0) {}
     Point(int32_t x, int32_t y) : Vec2crd(coord_t(x), coord_t(y)) {}
     Point(int64_t x, int64_t y) : Vec2crd(coord_t(x), coord_t(y)) {}
     Point(double x, double y) : Vec2crd(coord_t(std::round(x)), coord_t(std::round(y))) {}
     Point(const Point &rhs) { *this = rhs; }
-    Point(Vec3crd &p) : Vec2crd(p.x(), p.y()) {}
 	explicit Point(const Vec2d& rhs) : Vec2crd(coord_t(std::round(rhs.x())), coord_t(std::round(rhs.y()))) {}
 	// This constructor allows you to construct Point from Eigen expressions
+    // This constructor has to be implicit (non-explicit) to allow implicit conversion from Eigen expressions.
     template<typename OtherDerived>
     Point(const Eigen::MatrixBase<OtherDerived> &other) : Vec2crd(other) {}
     static Point new_scale(coordf_t x, coordf_t y) { return Point(coord_t(scale_(x)), coord_t(scale_(y))); }
-    static Point new_scale(const Vec2d &v) { return Point(coord_t(scale_(v.x())), coord_t(scale_(v.y()))); }
-    static Point new_scale(const Vec2f &v) { return Point(coord_t(scale_(v.x())), coord_t(scale_(v.y()))); }
+    template<typename OtherDerived>
+    static Point new_scale(const Eigen::MatrixBase<OtherDerived> &v) { return Point(coord_t(scale_(v.x())), coord_t(scale_(v.y()))); }
 
     // This method allows you to assign Eigen expressions to MyVectorType
     template<typename OtherDerived>
@@ -217,6 +232,16 @@ public:
         double dy = double(point.y() - this->y());
         return dx*dx + dy*dy;
     }
+    Point  rotate_90_degree_ccw() const { return Point(-this->y(), this->x()); }
+    int    nearest_point_index(const Points &points) const;
+    int    nearest_point_index(const PointConstPtrs &points) const;
+    int    nearest_point_index(const PointPtrs &points) const;
+    bool   nearest_point(const Points &points, Point* point) const;
+    double ccw(const Point &p1, const Point &p2) const;
+    double ccw(const Line &line) const;
+    double ccw_angle(const Point &p1, const Point &p2) const;
+    Point  projection_onto(const MultiPoint &poly) const;
+    Point  projection_onto(const Line &line) const;
 };
 
 inline bool operator<(const Point &l, const Point &r) 
@@ -566,6 +591,27 @@ inline coord_t align_to_grid(coord_t coord, coord_t spacing, coord_t base)
     { return base + align_to_grid(coord - base, spacing); }
 inline Point   align_to_grid(Point   coord, Point   spacing, Point   base)
     { return Point(align_to_grid(coord.x(), spacing.x(), base.x()), align_to_grid(coord.y(), spacing.y(), base.y())); }
+
+// MinMaxLimits
+template<typename T> struct MinMax { T min; T max;};
+template<typename T>
+static bool apply(std::optional<T> &val, const MinMax<T> &limit) {
+    if (!val.has_value()) return false;
+    return apply<T>(*val, limit);
+}
+template<typename T>
+static bool apply(T &val, const MinMax<T> &limit)
+{
+    if (val > limit.max) {
+        val = limit.max;
+        return true;
+    }
+    if (val < limit.min) {
+        val = limit.min;
+        return true;
+    }
+    return false;
+}
 
 } // namespace Slic3r
 

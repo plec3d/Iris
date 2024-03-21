@@ -12,11 +12,15 @@ const vec3 LIGHT_TOP_DIR = vec3(-0.4574957, 0.4574957, 0.7624929);
 const vec3 LIGHT_FRONT_DIR = vec3(0.6985074, 0.1397015, 0.6985074);
 #define LIGHT_FRONT_DIFFUSE  (0.3 * INTENSITY_CORRECTION)
 
-#define INTENSITY_AMBIENT    0.3
+#define INTENSITY_AMBIENT    0.5
 
 const vec3  ZERO    = vec3(0.0, 0.0, 0.0);
 const float EPSILON = 0.0001;
-
+//BBS: add grey and orange
+//const vec3 GREY = vec3(0.9, 0.9, 0.9);
+const vec3 ORANGE = vec3(0.8, 0.4, 0.0);
+const vec3 LightRed = vec3(0.78, 0.0, 0.0);
+const vec3 LightBlue = vec3(0.73, 1.0, 1.0);
 uniform vec4 uniform_color;
 
 uniform bool volume_mirrored;
@@ -26,8 +30,39 @@ uniform mat3 view_normal_matrix;
 
 in vec3 clipping_planes_dots;
 in vec4 model_pos;
+in vec4 world_pos;
+
+struct SlopeDetection
+{
+    bool actived;
+	 float normal_z;
+    mat3 volume_world_normal_matrix;
+};
+uniform SlopeDetection slope;
 
 out vec4 out_color;
+
+//BBS: add wireframe logic
+in vec3 barycentric_coordinates;
+float edgeFactor(float lineWidth) {
+    vec3 d = fwidth(barycentric_coordinates);
+    vec3 a3 = smoothstep(vec3(0.0), d * lineWidth, barycentric_coordinates);
+    return min(min(a3.x, a3.y), a3.z);
+}
+
+vec3 wireframe(vec3 fill, vec3 stroke, float lineWidth) {
+    return mix(stroke, fill, edgeFactor(lineWidth));
+	//if (any(lessThan(barycentric_coordinates, vec3(0.005, 0.005, 0.005))))
+	//	return vec3(1.0, 0.0, 0.0);
+	//else
+	//	return fill;
+}
+
+vec3 getWireframeColor(vec3 fill) {
+    float brightness = 0.2126 * fill.r + 0.7152 * fill.g + 0.0722 * fill.b;
+    return (brightness > 0.75) ? vec3(0.11, 0.165, 0.208) : vec3(0.988, 0.988, 0.988);
+}
+uniform bool show_wireframe;
 
 void main()
 {
@@ -44,6 +79,20 @@ void main()
     if (volume_mirrored)
         triangle_normal = -triangle_normal;
 
+    vec3 transformed_normal = normalize(slope.volume_world_normal_matrix * triangle_normal);
+     
+    if (slope.actived) {
+        if(world_pos.z<0.1&&world_pos.z>-0.1)
+         {
+              color = LightBlue;
+              alpha = 1.0;
+         }
+         else if( transformed_normal.z < slope.normal_z - EPSILON)
+        {
+            color = color * 0.5 + LightRed * 0.5;
+            alpha = 1.0;
+        }
+    }
     // First transform the normal into camera space and normalize the result.
     vec3 eye_normal = normalize(view_normal_matrix * triangle_normal);
 
@@ -61,5 +110,12 @@ void main()
     NdotL = max(dot(eye_normal, LIGHT_FRONT_DIR), 0.0);
     intensity.x += NdotL * LIGHT_FRONT_DIFFUSE;
 
-    out_color = vec4(vec3(intensity.y) + color * intensity.x, alpha);
+    if (show_wireframe) {
+        vec3 wireframeColor = show_wireframe ? getWireframeColor(color) : color;
+        vec3 triangleColor = wireframe(color, wireframeColor, 1.0);
+        out_color = vec4(vec3(intensity.y) + triangleColor * intensity.x, alpha);
+    }
+    else {
+        out_color = vec4(vec3(intensity.y) + color * intensity.x, alpha);
+    }
 }

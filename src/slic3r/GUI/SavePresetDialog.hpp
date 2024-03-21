@@ -10,6 +10,7 @@
 #include "libslic3r/Preset.hpp"
 #include "wxExtensions.hpp"
 #include "GUI_Utils.hpp"
+#include "Plater.hpp"
 
 class wxString;
 class wxStaticText;

@@ -82,6 +82,10 @@ public:
                 if(mix_color_cnt > 1) mixing_colors.push_back(m_config.multi_extruder_color2.get_at(0));
                 if(mix_color_cnt > 2) mixing_colors.push_back(m_config.multi_extruder_color3.get_at(0));
                 if(mix_color_cnt > 3) mixing_colors.push_back(m_config.multi_extruder_color4.get_at(0));
+                if(mix_color_cnt > 4) mixing_colors.push_back(m_config.multi_extruder_color5.get_at(0));
+                if(mix_color_cnt > 5) mixing_colors.push_back(m_config.multi_extruder_color6.get_at(0));
+                if(mix_color_cnt > 6) mixing_colors.push_back(m_config.multi_extruder_color7.get_at(0));
+                if(mix_color_cnt > 7) mixing_colors.push_back(m_config.multi_extruder_color8.get_at(0));
             }
             return this->need_toolchange(extruder_id) ? this->toolchange(extruder_id, mixing_colors, target_color) : ""; 
         }

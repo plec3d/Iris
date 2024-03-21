@@ -102,7 +102,7 @@ public:
     // EXTRUDER_LIMIT + 1 states are used to storing the painting because also uncolored triangles are stored.
     // When increasing EXTRUDER_LIMIT, it needs to ensure that TriangleSelector::serialization/deserialization
     // will be also extended to support additional states, requiring at least one state to remain free out of 19 states.
-    static const constexpr size_t EXTRUDERS_LIMIT = 16;
+    static const constexpr size_t EXTRUDERS_LIMIT = 8464;
 
     const float get_cursor_radius_min() const override { return CursorRadiusMin; }
 
@@ -128,13 +128,13 @@ protected:
     size_t                            m_selected_mixtruder  = 0;
     std::vector<int>                  m_mixer_extruder_real_ids;
     size_t                            m_first_selected_extruder_idx  = 0;
-    size_t                            m_second_selected_extruder_idx = 1;
+    size_t                            m_second_selected_extruder_idx = 0;
     bool                              m_has_mixing_extruder = false;
     std::vector<std::string>          m_original_extruders_names;
     std::vector<std::string>          m_stored_mixing_colors;
     std::vector<ColorRGBA>            m_original_extruders_colors;
     std::vector<ColorRGBA>            m_modified_extruders_colors;
-    std::vector<std::string>          m_mixing_extruder_colors;
+    std::vector<std::vector<std::string>>          m_mixing_extruder_colors;
     std::vector<std::string>          m_modified_mixer_colors;
     std::vector<std::string>          m_model_colors;
     std::vector<int>                  m_original_volumes_extruder_idxs;
@@ -145,7 +145,7 @@ private:
     bool on_init() override;
 
     void update_model_object() const override;
-    void update_from_model_object() override;
+    void update_from_model_object(bool first_update = false) override;
 
     void on_opening() override;
     void on_shutdown() override;

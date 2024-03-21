@@ -315,6 +315,37 @@ void GLGizmoBase::set_dirty() {
 }
 
 
+bool GLGizmoBase::GizmoImguiBegin(const std::string &name, int flags)
+{
+    return m_imgui->begin(name, flags);
+}
+
+void GLGizmoBase::GizmoImguiEnd()
+{
+    last_input_window_width = ImGui::GetWindowWidth();
+    m_imgui->end();
+}
+
+void GLGizmoBase::GizmoImguiSetNextWIndowPos(float &x, float y, int flag, float pivot_x, float pivot_y)
+{
+    GizmoImguiSetNextWIndowPos(x, y, last_input_window_width, 0, flag, pivot_x, pivot_y);
+}
+
+void GLGizmoBase::GizmoImguiSetNextWIndowPos(float &x, float y, float w, float h, int flag, float pivot_x, float pivot_y)
+{
+    if (abs(w) > 0.01f) {
+        if (x + w > m_parent.get_canvas_size().get_width()) {
+            if (w > m_parent.get_canvas_size().get_width()) {
+                x = 0;
+            } else {
+                x = m_parent.get_canvas_size().get_width() - w;
+            }
+        }
+    }
+
+    m_imgui->set_next_window_pos(x, y, flag, pivot_x, pivot_y);
+}
+
 
 void GLGizmoBase::render_input_window(float x, float y, float bottom_limit)
 {

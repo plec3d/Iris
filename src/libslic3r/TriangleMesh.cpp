@@ -194,24 +194,22 @@ static void trianglemesh_repair_on_import(stl_file &stl)
     BOOST_LOG_TRIVIAL(debug) << "TriangleMesh::repair() finished";
 }
 
-bool TriangleMesh::ReadSTLFile(const char* input_file, bool repair)
-{ 
-    stl_file stl;
-    if (! stl_open(&stl, input_file))
-        return false;
+bool TriangleMesh::from_stl(stl_file& stl, bool repair)
+{
     if (repair)
         trianglemesh_repair_on_import(stl);
 
-    m_stats.number_of_facets        = stl.stats.number_of_facets;
-    m_stats.min                     = stl.stats.min;
-    m_stats.max                     = stl.stats.max;
-    m_stats.size                    = stl.stats.size;
-    m_stats.volume                  = stl.stats.volume;
+#if 0
+    m_stats.number_of_facets = stl.stats.number_of_facets;
+    m_stats.min = stl.stats.min;
+    m_stats.max = stl.stats.max;
+    m_stats.size = stl.stats.size;
+    m_stats.volume = stl.stats.volume;
 
     auto facets_w_1_bad_edge = stl.stats.connected_facets_2_edge - stl.stats.connected_facets_3_edge;
     auto facets_w_2_bad_edge = stl.stats.connected_facets_1_edge - stl.stats.connected_facets_2_edge;
     auto facets_w_3_bad_edge = stl.stats.number_of_facets - stl.stats.connected_facets_1_edge;
-    m_stats.open_edges              = stl.stats.backwards_edges + facets_w_1_bad_edge + facets_w_2_bad_edge * 2 + facets_w_3_bad_edge * 3;
+    m_stats.open_edges = stl.stats.backwards_edges + facets_w_1_bad_edge + facets_w_2_bad_edge * 2 + facets_w_3_bad_edge * 3;
 
     m_stats.repaired_errors = { stl.stats.edges_fixed,
                                 stl.stats.degenerate_facets,
@@ -219,10 +217,20 @@ bool TriangleMesh::ReadSTLFile(const char* input_file, bool repair)
                                 stl.stats.facets_reversed,
                                 stl.stats.backwards_edges };
 
-    m_stats.number_of_parts         = stl.stats.number_of_parts;
+    m_stats.number_of_parts = stl.stats.number_of_parts;
+#endif
 
     stl_generate_shared_vertices(&stl, this->its);
+    fill_initial_stats(this->its, this->m_stats);
     return true;
+}
+
+bool TriangleMesh::ReadSTLFile(const char* input_file, bool repair)
+{ 
+    stl_file stl;
+    if (! stl_open(&stl, input_file))
+        return false;
+    return from_stl(stl, repair);
 }
 
 bool TriangleMesh::write_ascii(const char* output_file)
@@ -301,7 +309,7 @@ void TriangleMesh::rotate(float angle, const Axis &axis)
         case Z:  its_rotate_z(this->its, angle); break;
         default: assert(false);                  return;
         }
-        update_bounding_box(this->its, m_stats);
+        update_bounding_box(this->its, this->m_stats);
     }
 }
 
@@ -312,7 +320,7 @@ void TriangleMesh::rotate(float angle, const Vec3d& axis)
         Transform3d m = Transform3d::Identity();
         m.rotate(Eigen::AngleAxisd(angle, axis_norm));
         its_transform(its, m);
-        update_bounding_box(this->its, m_stats);
+        update_bounding_box(this->its, this->m_stats);
     }
 }
 
@@ -351,7 +359,7 @@ void TriangleMesh::transform(const Transform3d& t, bool fix_left_handed)
         det = -det;
     }
     m_stats.volume *= det;
-    update_bounding_box(this->its, m_stats);
+    update_bounding_box(this->its, this->m_stats);
 }
 
 void TriangleMesh::transform(const Matrix3d& m, bool fix_left_handed)
@@ -363,7 +371,7 @@ void TriangleMesh::transform(const Matrix3d& m, bool fix_left_handed)
         det = -det;
     }
     m_stats.volume *= det;
-    update_bounding_box(this->its, m_stats);
+    update_bounding_box(this->its, this->m_stats);
 }
 
 void TriangleMesh::flip_triangles()
@@ -375,6 +383,14 @@ void TriangleMesh::flip_triangles()
 void TriangleMesh::align_to_origin()
 {
     this->translate(- m_stats.min(0), - m_stats.min(1), - m_stats.min(2));
+}
+
+bool TriangleMesh::has_zero_volume() const
+{
+    const Vec3d sz = size();
+    const double volume_val = sz.x() * sz.y() * sz.z();
+
+    return is_approx(volume_val, 0., 0.1);
 }
 
 void TriangleMesh::rotate(double angle, Point* center)
@@ -393,14 +409,6 @@ void TriangleMesh::rotate(double angle, Point* center)
 bool TriangleMesh::is_splittable() const
 {
     return its_is_splittable(this->its);
-}
-
-bool TriangleMesh::has_zero_volume() const
-{
-    const Vec3d sz = size();
-    const double volume_val = sz.x() * sz.y() * sz.z();
-
-    return is_approx(volume_val, 0.0);
 }
 
 std::vector<TriangleMesh> TriangleMesh::split() const
@@ -433,7 +441,7 @@ ExPolygons TriangleMesh::horizontal_projection() const
 }
 
 // 2D convex hull of a 3D mesh projected into the Z=0 plane.
-Polygon TriangleMesh::convex_hull()
+Polygon TriangleMesh::convex_hull() const
 {
     Points pp;
     pp.reserve(this->its.vertices.size());
@@ -529,7 +537,7 @@ std::vector<ExPolygons> TriangleMesh::slice(const std::vector<double> &z) const
 
 size_t TriangleMesh::memsize() const
 {
-    size_t memsize = 8 + this->its.memsize() + sizeof(m_stats);
+    size_t memsize = 8 + this->its.memsize() + sizeof(this->m_stats);
     return memsize;
 }
 
@@ -639,7 +647,7 @@ std::vector<Vec3i> its_face_edge_ids(const indexed_triangle_set &its, std::funct
     return its_face_edge_ids_impl(its, [](const uint32_t){ return true; }, throw_on_cancel_callback);
 }
 
-std::vector<Vec3i> its_face_edge_ids(const indexed_triangle_set &its, const std::vector<char> &face_mask)
+std::vector<Vec3i> its_face_edge_ids(const indexed_triangle_set &its, const std::vector<bool> &face_mask)
 {
     return its_face_edge_ids_impl(its, [&face_mask](const uint32_t idx){ return face_mask[idx]; }, [](){});
 }
@@ -755,13 +763,6 @@ void its_flip_triangles(indexed_triangle_set &its)
         std::swap(face(1), face(2));
 }
 
-int its_num_degenerate_faces(const indexed_triangle_set &its)
-{
-    return std::count_if(its.indices.begin(), its.indices.end(), [](auto &face) {
-        return face(0) == face(1) || face(0) == face(2) || face(1) == face(2);
-    });
-}
-
 int its_remove_degenerate_faces(indexed_triangle_set &its, bool shrink_to_fit)
 {
     auto it = std::remove_if(its.indices.begin(), its.indices.end(), [](auto &face) {
@@ -807,9 +808,9 @@ int its_compactify_vertices(indexed_triangle_set &its, bool shrink_to_fit)
     return removed;
 }
 
-bool its_store_triangle_to_obj(const indexed_triangle_set &its,
-                               const char                 *obj_filename,
-                               size_t                      triangle_index)
+bool its_store_triangle(const indexed_triangle_set &its,
+                        const char *                obj_filename,
+                        size_t                      triangle_index)
 {
     if (its.indices.size() <= triangle_index) return false;
     Vec3i                t = its.indices[triangle_index];
@@ -820,9 +821,9 @@ bool its_store_triangle_to_obj(const indexed_triangle_set &its,
     return its_write_obj(its2, obj_filename);
 }
 
-bool its_store_triangles_to_obj(const indexed_triangle_set &its,
-                                const char                 *obj_filename,
-                                const std::vector<size_t>  &triangles)
+bool its_store_triangles(const indexed_triangle_set &its,
+                         const char *                obj_filename,
+                         const std::vector<size_t> & triangles)
 {
     indexed_triangle_set its2;
     its2.vertices.reserve(triangles.size() * 3);
@@ -888,38 +889,11 @@ void its_collect_mesh_projection_points_above(const indexed_triangle_set &its, c
 }
 
 template<typename TransformVertex>
-Polygon its_convex_hull_2d_above(const indexed_triangle_set& its, const TransformVertex& transform_fn, const float z)
+Polygon its_convex_hull_2d_above(const indexed_triangle_set &its, const TransformVertex &transform_fn, const float z)
 {
-    auto collect_mesh_projection_points_above = [&](const tbb::blocked_range<size_t>& range) {
-        Points pts;
-        pts.reserve(range.size() * 4); // there can be up to 4 vertices per triangle
-        for (size_t i = range.begin(); i < range.end(); ++i) {
-            const stl_triangle_vertex_indices& tri = its.indices[i];
-            const Vec3f tri_pts[3] = { transform_fn(its.vertices[tri(0)]), transform_fn(its.vertices[tri(1)]), transform_fn(its.vertices[tri(2)]) };
-            int iprev = 2;
-            for (int iedge = 0; iedge < 3; ++iedge) {
-                const Vec3f& p1 = tri_pts[iprev];
-                const Vec3f& p2 = tri_pts[iedge];
-                if ((p1.z() < z && p2.z() > z) || (p2.z() < z && p1.z() > z)) {
-                    // Edge crosses the z plane. Calculate intersection point with the plane.
-                    const float t = (z - p1.z()) / (p2.z() - p1.z());
-                    pts.emplace_back(scaled<coord_t>(p1.x() + (p2.x() - p1.x()) * t), scaled<coord_t>(p1.y() + (p2.y() - p1.y()) * t));
-                }
-                if (p2.z() >= z)
-                    pts.emplace_back(scaled<coord_t>(p2.x()), scaled<coord_t>(p2.y()));
-                iprev = iedge;
-            }
-        }
-        return Geometry::convex_hull(std::move(pts));
-    };
-
-    tbb::concurrent_vector<Polygon> chs;
-    tbb::parallel_for(tbb::blocked_range<size_t>(0, its.indices.size()), [&](const tbb::blocked_range<size_t>& range) {
-        chs.push_back(collect_mesh_projection_points_above(range));
-    });
-
-    const Polygons polygons(std::make_move_iterator(chs.begin()), std::make_move_iterator(chs.end()));
-    return Geometry::convex_hull(polygons);
+    Points all_pts;
+    its_collect_mesh_projection_points_above(its, transform_fn, z, all_pts);
+    return Geometry::convex_hull(std::move(all_pts));
 }
 
 Polygon its_convex_hull_2d_above(const indexed_triangle_set &its, const Matrix3f &m, const float z)
@@ -1066,10 +1040,8 @@ indexed_triangle_set its_make_cone(double r, double h, double fa)
     vertices.emplace_back(Vec3f(0., 0., h));
 
     size_t i = 0;
-    const auto vec = Eigen::Vector2f(0, float(r));
     for (double angle=0; angle<2*PI; angle+=fa) {
-        Vec2f p = Eigen::Rotation2Df(angle) * vec;
-        vertices.emplace_back(Vec3f(p(0), p(1), 0.f));
+        vertices.emplace_back(r*std::cos(angle), r*std::sin(angle), 0.);
         if (angle > 0.) {
             facets.emplace_back(0, i+2, i+1);
             facets.emplace_back(1, i+1, i+2);
@@ -1104,121 +1076,58 @@ indexed_triangle_set its_make_pyramid(float base, float height)
 // Generates mesh for a sphere centered about the origin, using the generated angle
 // to determine the granularity. 
 // Default angle is 1 degree.
+//FIXME better to discretize an Icosahedron recursively http://www.songho.ca/opengl/gl_sphere.html
 indexed_triangle_set its_make_sphere(double radius, double fa)
 {
-    // First build an icosahedron (taken from http://www.songho.ca/opengl/gl_sphere.html)
+    int   sectorCount = int(ceil(2. * M_PI / fa));
+    int   stackCount  = int(ceil(M_PI / fa));
+    float sectorStep  = float(2. * M_PI / sectorCount);
+    float stackStep   = float(M_PI / stackCount);
+
     indexed_triangle_set mesh;
-
-    const float PI = 3.1415926f;
-    const float H_ANGLE = PI / 180 * 72;    // 72 degree = 360 / 5
-    const float V_ANGLE = atanf(1.0f / 2);  // elevation = 26.565 degree
-
     auto& vertices = mesh.vertices;
-    auto& indices = mesh.indices;
-    vertices.resize(12);
-    indices.reserve(20);
-
-    float z, xy;
-    float hAngle1 = -PI / 2 - H_ANGLE / 2;
-
-    vertices[0] = stl_vertex(0, 0, radius); // the first top vertex at (0, 0, r)
-
-    for (int i = 1; i <= 5; ++i) {
-        z  = radius * sinf(V_ANGLE);
-        xy = radius * cosf(V_ANGLE);
-        vertices[i] = stl_vertex(xy * cosf(hAngle1), xy * sinf(hAngle1), z);
-        vertices[i+5] = stl_vertex(xy * cosf(hAngle1 + H_ANGLE / 2), xy * sinf(hAngle1 + H_ANGLE / 2), -z);
-        hAngle1 += H_ANGLE;
-
-        indices.emplace_back(stl_triangle_vertex_indices(i, i < 5 ? i+1 : 1, 0));
-        indices.emplace_back(stl_triangle_vertex_indices(i, i+5, i < 5 ? i+1 : 1));
-        indices.emplace_back(stl_triangle_vertex_indices(i+5, i+6 < 11 ? i+6 : 6, i+6 < 11 ? i+1 : 1));
-        indices.emplace_back(stl_triangle_vertex_indices(i+5, 11, i+6 < 11 ? i+6 : 6));
-    }
-    vertices[11] = stl_vertex(0, 0, -radius); // the last bottom vertex at (0, 0, -r)
-
-    
-    // We have a beautiful icosahedron. Now subdivide the triangles.
-    std::vector<Vec3i> neighbors = its_face_neighbors(mesh); // This is cheap, the mesh is small.
-
-    const double side_len_limit = radius * fa;
-    const double side_len = (vertices[1] - vertices[0]).norm();
-    const int iterations = std::ceil(std::log2(side_len / side_len_limit));
-
-    indices.reserve(indices.size() * std::pow(4, iterations));
-    vertices.reserve(vertices.size() * std::pow(2, iterations));
-
-    struct DividedEdge {
-        int neighbor = -1;
-        int middle_vertex_idx;
-        std::pair<int, int> children_idxs;
-    };
-
-    for (int iter=0; iter<iterations; ++iter) {
-        std::vector<std::array<DividedEdge, 3>> divided_triangles(indices.size());
-        std::vector<Vec3i> new_neighbors(4*indices.size());
-
-        int orig_indices_size = int(indices.size());
-        for (int i=0; i<orig_indices_size; ++i) { // iterate over all old triangles
-
-            // We are going to split this triangle. Let's foresee what will be the indices
-            // of the new internal triangles along individual edges.
-            int last_triangle_idx = indices.size()-1;
-            std::array<std::pair<int, int>, 3> edge_children = { std::make_pair(i,last_triangle_idx + 2),
-                                                                 std::make_pair(last_triangle_idx + 2,last_triangle_idx + 3),
-                                                                 std::make_pair(last_triangle_idx + 3,i) };
-
-            std::array<int, 3> middle_vertices_idxs;
-            std::array<std::pair<int, int>, 3> new_neighbors_per_edge;
-
-            for (int n=0; n<3; ++n) { // for all three edges
-                const int edge_neighbor = neighbors[i][n];
-
-                if (divided_triangles[edge_neighbor][0].neighbor == -1) {
-                    // This n-th edge is not yet divided. Divide it now.
-                    vertices.emplace_back(0.5 * (vertices[indices[i][n]] + vertices[indices[i][n == 2 ? 0 : n+1]]));
-                    vertices.back() *= radius / vertices.back().norm();
-                    middle_vertices_idxs[n] = vertices.size()-1;
-
-                    // Save information about what we did.
-                    int j = -1;
-                    while (divided_triangles[i][++j].neighbor != -1);
-                    
-                    divided_triangles[i][j] = { edge_neighbor, int(vertices.size()-1), edge_children[n] };
-                    new_neighbors_per_edge[n] = std::make_pair(-1,-1);
-                } else {
-                    // This edge is already divided. Get the index of the middle point.
-                    int j = -1;
-                    while (divided_triangles[edge_neighbor][++j].neighbor != i);
-                    middle_vertices_idxs[n] = divided_triangles[edge_neighbor][j].middle_vertex_idx;
-                    new_neighbors_per_edge[n] = divided_triangles[edge_neighbor][j].children_idxs;
-                    std::swap(new_neighbors_per_edge[n].first, new_neighbors_per_edge[n].second);
-
-                    // We have saved the middle-point. We are looking for edges leading to/from it.
-                    int idx = -1; while (indices[new_neighbors_per_edge[n].first][++idx] != middle_vertices_idxs[n]);
-                    new_neighbors[new_neighbors_per_edge[n].first][idx] = edge_children[n].first;
-                    new_neighbors[new_neighbors_per_edge[n].second][idx] = edge_children[n].second;
-                }
+    vertices.reserve((stackCount - 1) * sectorCount + 2);
+    for (int i = 0; i <= stackCount; ++ i) {
+        // from pi/2 to -pi/2
+        double stackAngle = 0.5 * M_PI - stackStep * i;
+        double xy = radius * cos(stackAngle);
+        double z  = radius * sin(stackAngle);
+        if (i == 0 || i == stackCount)
+            vertices.emplace_back(Vec3f(float(xy), 0.f, float(z)));
+        else
+            for (int j = 0; j < sectorCount; ++ j) {
+                // from 0 to 2pi
+                double sectorAngle = sectorStep * j;
+                vertices.emplace_back(Vec3d(xy * std::cos(sectorAngle), xy * std::sin(sectorAngle), z).cast<float>());
             }
-
-            // Add three new triangles, reindex the old one.
-            const int last_index = indices.size() - 1;
-            indices.emplace_back(stl_triangle_vertex_indices(middle_vertices_idxs[0], middle_vertices_idxs[1], middle_vertices_idxs[2]));
-            new_neighbors[indices.size()-1] = Vec3i(last_index+2, last_index+3, i);
-
-            indices.emplace_back(stl_triangle_vertex_indices(middle_vertices_idxs[0], indices[i][1], middle_vertices_idxs[1]));
-            new_neighbors[indices.size()-1] = Vec3i(new_neighbors_per_edge[0].second, new_neighbors_per_edge[1].first, last_index+1);
-
-            indices.emplace_back(stl_triangle_vertex_indices(middle_vertices_idxs[2], middle_vertices_idxs[1], indices[i][2]));
-            new_neighbors[indices.size()-1] = Vec3i(last_index+1, new_neighbors_per_edge[1].second, new_neighbors_per_edge[2].first);
-
-            indices[i][1] = middle_vertices_idxs[0];
-            indices[i][2] = middle_vertices_idxs[2];
-            new_neighbors[i] = Vec3i(new_neighbors_per_edge[0].first, last_index+1, new_neighbors_per_edge[2].second);
-
-        }
-        neighbors = std::move(new_neighbors);
     }
+
+    auto& facets = mesh.indices;
+    facets.reserve(2 * (stackCount - 1) * sectorCount);
+    for (int i = 0; i < stackCount; ++ i) {
+        // Beginning of current stack.
+        int k1 = (i == 0) ? 0 : (1 + (i - 1) * sectorCount);
+        int k1_first = k1;
+        // Beginning of next stack.
+        int k2 = (i == 0) ? 1 : (k1 + sectorCount);
+        int k2_first = k2;
+        for (int j = 0; j < sectorCount; ++ j) {
+            // 2 triangles per sector excluding first and last stacks
+            int k1_next = k1;
+            int k2_next = k2;
+            if (i != 0) {
+                k1_next = (j + 1 == sectorCount) ? k1_first : (k1 + 1);
+                facets.emplace_back(k1, k2, k1_next);
+            }
+            if (i + 1 != stackCount) {
+                k2_next = (j + 1 == sectorCount) ? k2_first : (k2 + 1);
+                facets.emplace_back(k1_next, k2, k2_next);
+            }
+            k1 = k1_next;
+            k2 = k2_next;
+        }
+    }
+
     return mesh;
 }
 
@@ -1488,23 +1397,6 @@ void its_reverse_all_facets(indexed_triangle_set &its)
         std::swap(face[0], face[1]);
 }
 
-void its_merge(indexed_triangle_set &its, indexed_triangle_set &&its_add)
-{
-    if (its.empty()) {
-        its = std::move(its_add);
-        return;
-    }
-    auto  &verts      = its.vertices;
-    size_t verts_size = verts.size();
-    Slic3r::append(verts, std::move(its_add.vertices));
-
-    // increase face indices
-    int offset = static_cast<int>(verts_size);
-    for (auto &face : its_add.indices)
-        for (int i = 0; i < 3; ++i) face[i] += offset;
-    Slic3r::append(its.indices, std::move(its_add.indices));
-}
-
 void its_merge(indexed_triangle_set &A, const indexed_triangle_set &B)
 {
     auto N   = int(A.vertices.size());
@@ -1598,16 +1490,6 @@ bool its_is_splittable(const indexed_triangle_set &its, const std::vector<Vec3i>
     return its_is_splittable<>(ItsNeighborsWrapper{ its, face_neighbors });
 }
 
-size_t its_num_open_edges(const std::vector<Vec3i> &face_neighbors)
-{
-    size_t num_open_edges = 0;
-    for (const Vec3i& neighbors : face_neighbors)
-        for (int n : neighbors)
-            if (n < 0)
-                ++ num_open_edges;
-    return num_open_edges;
-}
-
 std::vector<std::pair<int, int>> its_get_open_edges(const indexed_triangle_set& its)
 {
     std::vector<std::pair<int, int>> ret;
@@ -1621,6 +1503,16 @@ std::vector<std::pair<int, int>> its_get_open_edges(const indexed_triangle_set& 
         }
     }
     return ret;
+}
+
+size_t its_num_open_edges(const std::vector<Vec3i> &face_neighbors)
+{
+    size_t num_open_edges = 0;
+    for (Vec3i neighbors : face_neighbors)
+        for (int n : neighbors)
+            if (n < 0)
+                ++ num_open_edges;
+    return num_open_edges;
 }
 
 size_t its_num_open_edges(const indexed_triangle_set &its)
@@ -1746,6 +1638,5 @@ bool its_write_stl_binary(const char *file, const char *label, const std::vector
     fclose(fp);
     return true;
 }
-
 
 } // namespace Slic3r

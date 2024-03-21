@@ -38,18 +38,18 @@ Flow LayerRegion::bridging_flow(FlowRole role, bool force_thick_bridges) const
 {
     const PrintRegion       &region         = this->region();
     const PrintRegionConfig &region_config  = region.config();
-    const PrintObject       &print_object   = *this->layer()->object();
-    if (print_object.config().thick_bridges || force_thick_bridges) {
+    //const PrintObject       &print_object   = *this->layer()->object();
+    /*if (print_object.config().thick_bridges || force_thick_bridges) {
         // The old Slic3r way (different from all other slicers): Use rounded extrusions.
         // Get the configured nozzle_diameter for the extruder associated to the flow role requested.
         // Here this->extruder(role) - 1 may underflow to MAX_INT, but then the get_at() will follback to zero'th element, so everything is all right.
         auto nozzle_diameter = float(print_object.print()->config().nozzle_diameter.get_at(region.extruder(role) - 1));
         // Applies default bridge spacing.
         return Flow::bridging_flow(float(sqrt(region_config.bridge_flow_ratio)) * nozzle_diameter, nozzle_diameter);
-    } else {
+    } else {*/
         // The same way as other slicers: Use normal extrusions. Apply bridge_flow_ratio while maintaining the original spacing.
         return this->flow(role).with_flow_ratio(region_config.bridge_flow_ratio);
-    }
+    //}
 }
 
 // Fill in layerm->fill_surfaces by trimming the layerm->slices by layerm->fill_expolygons.
@@ -147,7 +147,7 @@ void LayerRegion::make_perimeters(
     }
 }
 
-#if 1
+#if 0
 
 // Extract surfaces of given type from surfaces, extract fill (layer) thickness of one of the surfaces.
 static ExPolygons fill_surfaces_extract_expolygons(Surfaces &surfaces, std::initializer_list<SurfaceType> surface_types, double &thickness)
@@ -463,21 +463,15 @@ void LayerRegion::process_external_surfaces(const Layer *lower_layer, const Poly
     }
 
     Surfaces    bottoms = expand_merge_surfaces(m_fill_surfaces.surfaces, stBottom, shells,
-        RegionExpansionParameters::build(expansion_bottom, expansion_step, max_nr_expansion_steps), 
+        RegionExpansionParameters::build(expansion_bottom, expansion_step, max_nr_expansion_steps),
         sparse, expansion_params_into_sparse_infill, closing_radius);
     Surfaces    tops    = expand_merge_surfaces(m_fill_surfaces.surfaces, stTop, shells,
-        RegionExpansionParameters::build(expansion_top, expansion_step, max_nr_expansion_steps), 
-        sparse, expansion_params_into_sparse_infill, closing_radius);
-    Surfaces    nonplanarTops = expand_merge_surfaces(m_fill_surfaces.surfaces, stTopNonplanar, shells,
-        RegionExpansionParameters::build(expansion_top, expansion_step, max_nr_expansion_steps), 
-        sparse, expansion_params_into_sparse_infill, closing_radius);
-    Surfaces    nonplanarInternals = expand_merge_surfaces(m_fill_surfaces.surfaces, stInternalSolidNonplanar, shells,
-        RegionExpansionParameters::build(expansion_top, expansion_step, max_nr_expansion_steps), 
+        RegionExpansionParameters::build(expansion_top, expansion_step, max_nr_expansion_steps),
         sparse, expansion_params_into_sparse_infill, closing_radius);
 
 //    m_fill_surfaces.remove_types({ stBottomBridge, stBottom, stTop, stInternal, stInternalSolid });
     m_fill_surfaces.clear();
-    reserve_more(m_fill_surfaces.surfaces, shells.size() + sparse.size() + bridges.size() + bottoms.size() + tops.size() + nonplanarTops.size() + nonplanarInternals.size());
+    reserve_more(m_fill_surfaces.surfaces, shells.size() + sparse.size() + bridges.size() + bottoms.size() + tops.size());
     {
         Surface solid_templ(stInternalSolid, {});
         solid_templ.thickness = layer_thickness;
@@ -491,8 +485,6 @@ void LayerRegion::process_external_surfaces(const Layer *lower_layer, const Poly
     m_fill_surfaces.append(std::move(bridges.surfaces));
     m_fill_surfaces.append(std::move(bottoms));
     m_fill_surfaces.append(std::move(tops));
-    m_fill_surfaces.append(std::move(nonplanarTops));
-    m_fill_surfaces.append(std::move(nonplanarInternals));
 
 #ifdef SLIC3R_DEBUG_SLICE_PROCESSING
     export_region_fill_surfaces_to_svg_debug("4_process_external_surfaces-final");
@@ -507,9 +499,8 @@ void LayerRegion::process_external_surfaces(const Layer *lower_layer, const Poly
 void LayerRegion::process_external_surfaces(const Layer *lower_layer, const Polygons *lower_layer_covered)
 {
     const bool      has_infill = this->region().config().fill_density.value > 0.;
+    const float		margin 	   = float(scale_(EXTERNAL_INFILL_MARGIN));//this->layer()->object()->config().overhang_overlap.value));//EXTERNAL_INFILL_MARGIN));
 //    const float		margin     = scaled<float>(0.1); // float(scale_(EXTERNAL_INFILL_MARGIN));
-    const float     margin     = float(scale_(EXTERNAL_INFILL_MARGIN));
-
 #ifdef SLIC3R_DEBUG_SLICE_PROCESSING
     export_region_fill_surfaces_to_svg_debug("4_process_external_surfaces-initial");
 #endif /* SLIC3R_DEBUG_SLICE_PROCESSING */
@@ -618,7 +609,7 @@ void LayerRegion::process_external_surfaces(const Layer *lower_layer, const Poly
                         break;
                     }
                 // Grown by 3mm.
-                Polygons polys = offset(bridges[i].expolygon, margin, EXTERNAL_SURFACES_OFFSET_PARAMETERS);
+                Polygons polys = offset(bridges[i].expolygon, float(scale_(this->layer()->object()->config().overhang_overlap.value)), EXTERNAL_SURFACES_OFFSET_PARAMETERS);
                 if (idx_island == -1) {
 				    BOOST_LOG_TRIVIAL(trace) << "Bridge did not fall into the source region!";
                 } else {
@@ -685,13 +676,13 @@ void LayerRegion::process_external_surfaces(const Layer *lower_layer, const Poly
                 // would get merged into a single one while they need different directions
                 // also, supply the original expolygon instead of the grown one, because in case
                 // of very thin (but still working) anchors, the grown expolygon would go beyond them
-                /*double custom_angle = Geometry::deg2rad(this->region().config().bridge_angle.value);
-                if (custom_angle > 0.0) {
+                double custom_angle = Geometry::deg2rad(this->region().config().bridge_angle.value);
+                /*if (custom_angle > 0.0) {
                     bridges[idx_last].bridge_angle = custom_angle;
                 } else {
                     auto [bridging_dir, unsupported_dist] = detect_bridging_direction(to_polygons(initial), to_polygons(lower_layer->lslices));
                     bridges[idx_last].bridge_angle = PI + std::atan2(bridging_dir.y(), bridging_dir.x());
-                */
+
                     // #if 1
                     //     coordf_t    stroke_width = scale_(0.06);
                     //     BoundingBox bbox         = get_extents(initial);
@@ -703,27 +694,8 @@ void LayerRegion::process_external_surfaces(const Layer *lower_layer, const Poly
                     //     svg.draw(initial, "cyan");
                     //     svg.draw(to_lines(lower_layer->lslices), "green", stroke_width);
                     // #endif
-                }
-
-                /*
-                BridgeDetector bd(initial, lower_layer->lslices, this->bridging_flow(frInfill).scaled_width());
-                #ifdef SLIC3R_DEBUG
-                printf("Processing bridge at layer %zu:\n", this->layer()->id());
-                #endif
-				double custom_angle = Geometry::deg2rad(this->region().config().bridge_angle.value);
-				if (bd.detect_angle(custom_angle)) {
-                    bridges[idx_last].bridge_angle = bd.angle;
-                    if (this->layer()->object()->has_support()) {
-//                        polygons_append(this->bridged, bd.coverage());
-                        append(m_unsupported_bridge_edges, bd.unsupported_edges());
-                    }
-				} else if (custom_angle > 0) {
-					// Bridge was not detected (likely it is only supported at one side). Still it is a surface filled in
-					// using a bridging flow, therefore it makes sense to respect the custom bridging direction.
-					bridges[idx_last].bridge_angle = custom_angle;
-				}
-                */
-                BridgeDetector bd(
+                }*/
+		BridgeDetector bd(
                         initial,
                         lower_layer->lslices,
                         this->flow(frInfill).scaled_width()
@@ -731,24 +703,26 @@ void LayerRegion::process_external_surfaces(const Layer *lower_layer, const Poly
                     #ifdef SLIC3R_DEBUG
                     printf("Processing bridge at layer %zu:\n", this->layer()->id());
                     #endif
-                if (bd.detect_angle(custom_angle)) { //, &this->region().config()
-                            bridges[idx_last].bridge_angle = bd.angle;
-                    if (this->layer()->object()->has_support()) {
-                                //polygons_append(this->bridged, bd.coverage());
-                                append(m_unsupported_bridge_edges, bd.unsupported_edges());
-                            }
-                                        } else if (custom_angle > 0) {
-                                                // Bridge was not detected (likely it is only supported at one side). Stil>
-                                                // using a bridging flow, therefore it makes sense to respect the custom b>
-                                                bridges[idx_last].bridge_angle = custom_angle;
-                                        }
-                        if(!bd._pedestal.empty()) bridges[idx_last].pedestal = (Polyline)bd._pedestal;
-                if(bd.has_overhang_holes){
-                    //bridges[idx_last].holes = (Polylines)bd._holes;
-                            this->has_overhang_holes = true;
-                }
-                if(bd.is_bridge){
-                    this->is_bridge = true;
+		if (bd.detect_angle(custom_angle, &this->region().config())) {
+                    bridges[idx_last].bridge_angle = bd.angle;
+		    if (this->layer()->object()->has_support()) {
+                        //polygons_append(this->bridged, bd.coverage());
+                        append(m_unsupported_bridge_edges, bd.unsupported_edges());
+                    }
+                                } else if (custom_angle > 0) {
+                                        // Bridge was not detected (likely it is only supported at one side). Stil>
+                                        // using a bridging flow, therefore it makes sense to respect the custom b>
+                                        bridges[idx_last].bridge_angle = custom_angle;
+                                }
+                if(!bd._pedestal.empty()) bridges[idx_last].pedestal = (Polyline)bd._pedestal;
+		if(bd.has_overhang_holes){
+			//bridges[idx_last].holes = (Polylines)bd._holes;
+              		this->has_overhang_holes = true;
+		}
+		if(bd.is_bridge){
+            bridges[idx_last].bridge = true;
+            this->is_bridge = true;
+        }
                 // without safety offset, artifacts are generated (GH #2494)
                 surfaces_append(bottom, union_safety_offset_ex(grown), bridges[idx_last]);
             }
@@ -915,7 +889,7 @@ void LayerRegion::export_region_slices_to_svg_debug(const char *name) const
 {
     static std::map<std::string, size_t> idx_map;
     size_t &idx = idx_map[name];
-    this->export_region_slices_to_svg(debug_out_path("LayerRegion-%d-slices-%s-%d.svg", layer()->id(), name, idx ++).c_str());
+    this->export_region_slices_to_svg(debug_out_path("LayerRegion-slices-%s-%d.svg", name, idx ++).c_str());
 }
 
 void LayerRegion::export_region_fill_surfaces_to_svg(const char *path) const
@@ -942,246 +916,7 @@ void LayerRegion::export_region_fill_surfaces_to_svg_debug(const char *name) con
 {
     static std::map<std::string, size_t> idx_map;
     size_t &idx = idx_map[name];
-    this->export_region_fill_surfaces_to_svg(debug_out_path("LayerRegion-%d-fill_surfaces-%s-%d.svg", layer()->id(), name, idx ++).c_str());
-}
-
-void
-LayerRegion::append_nonplanar_surface(NonplanarSurface& surface)
-{
-    for(auto & s : m_nonplanar_surfaces){
-        if (s == surface){
-            return;
-        }    
-    }
-    m_nonplanar_surfaces.push_back(surface);
-}
-
-void
-LayerRegion::project_nonplanar_extrusion(ExtrusionEntityCollection *collection)
-{
-    for (auto& entity : collection->entities) {
-        if (ExtrusionLoop* loop = dynamic_cast<ExtrusionLoop*>(entity)) {
-            BOOST_LOG_TRIVIAL(trace) << "Projecting extrusion loop with " << loop->paths.size() << " paths";
-
-            for(auto& path : loop->paths) {
-                project_nonplanar_path(&path);
-                correct_z_on_path(&path);
-            }
-
-#ifdef SLIC3R_DEBUG_SLICE_PROCESSING
-            {
-                static int iRun = 0;
-                export_to_svg(debug_out_path("Layer-%d_project_extrusion_loop-%u-after.svg", layer()->id(), iRun ++).c_str(), 
-                    loop->as_polyline(), get_extents(this->slices().surfaces), scale_(0.1f));
-            }
-#endif
-        } else if (ExtrusionMultiPath* multipath = dynamic_cast<ExtrusionMultiPath*>(entity)) {
-            BOOST_LOG_TRIVIAL(trace) << "Projecting extrusion multipath with " << multipath->paths.size() << " paths";
-
-            for (auto& path : multipath->paths) {
-                project_nonplanar_path(&path);
-                correct_z_on_path(&path);
-            }
-#ifdef SLIC3R_DEBUG_SLICE_PROCESSING
-            {
-                static int iRun = 0;
-                export_to_svg(debug_out_path("Layer-%d_project_extrusion_multipath-%u-after.svg", layer()->id(), iRun ++).c_str(), 
-                    multipath->as_polyline(), get_extents(this->slices().surfaces), scale_(0.1f));
-            }
-#endif
-        } else if (ExtrusionPath* path = dynamic_cast<ExtrusionPath*>(entity)) {
-            BOOST_LOG_TRIVIAL(trace) << "Projecting 1 extrusion path";
-
-            project_nonplanar_path(path);
-            correct_z_on_path(path);
-#ifdef SLIC3R_DEBUG_SLICE_PROCESSING
-            {
-                static int iRun = 0;
-                export_to_svg(debug_out_path("Layer-%d_project_extrusion_path-%u-after.svg", layer()->id(), iRun ++).c_str(), 
-                    path->as_polyline(), get_extents(this->slices().surfaces), scale_(0.1f));
-            }
-#endif
-        } else {
-            BOOST_LOG_TRIVIAL(trace) << "Unknown entity class " << typeid(entity).name();
-            assert(false);
-        }
-    }
-}
-
-void
-LayerRegion::project_nonplanar_surfaces()
-{
-    // skip if there are no nonplanar_surfaces on this LayerRegion
-    if (m_nonplanar_surfaces.size() == 0) {
-        return;
-    }
-
-    BOOST_LOG_TRIVIAL(trace) << "Projecting " << m_nonplanar_surfaces.size() << " nonplanar surfaces for region " << 
-        region().print_region_id() << " and layer " << layer()->id() << " (z = " << layer()->print_z << ")";
-
-    // for all perimeters do path projection
-    BOOST_LOG_TRIVIAL(trace) << "Projecting " << m_perimeters.size() << " nonplanar perimeters";
-    for (auto& col : m_perimeters.entities) {
-        ExtrusionEntityCollection* collection = dynamic_cast<ExtrusionEntityCollection*>(col);
-        this->project_nonplanar_extrusion(collection);
-    }
-
-    // and all fill paths do path projection
-    BOOST_LOG_TRIVIAL(trace) << "Projecting " << m_fills.size() << " nonplanar fills";
-    for (auto& col : m_fills.entities) {
-        ExtrusionEntityCollection* collection = dynamic_cast<ExtrusionEntityCollection*>(col);
-        this->project_nonplanar_extrusion(collection);
-    }
-}
-
-//Sorting functions for soring of paths
-bool
-greaterX(const Vec3d &a, const Vec3d &b)
-{
-   return (a.x() < b.x());
-}
-
-bool
-smallerX(const Vec3d &a, const Vec3d &b)
-{
-   return (a.x() > b.x());
-}
-
-bool
-greaterY(const Vec3d &a, const Vec3d &b)
-{
-   return (a.y() < b.y());
-}
-
-bool
-smallerY(const Vec3d &a, const Vec3d &b)
-{
-   return (a.y() > b.y());
-}
-
-void
-LayerRegion::project_nonplanar_path(ExtrusionPath *path)
-{
-    //First check all points and project them regarding the triangle mesh
-    for (Point& point : path->polyline.points) {
-        for (auto& surface : m_nonplanar_surfaces) {
-            float distance_to_top = surface.stats.max.z - this->layer()->print_z;
-            for(auto& facet : surface.mesh) {
-                // skip if point is outside of the bounding box of the triangle
-                if (unscale(point).x() < std::min({facet.second.vertex[0].x, facet.second.vertex[1].x, facet.second.vertex[2].x}) ||
-                    unscale(point).x() > std::max({facet.second.vertex[0].x, facet.second.vertex[1].x, facet.second.vertex[2].x}) ||
-                    unscale(point).y() < std::min({facet.second.vertex[0].y, facet.second.vertex[1].y, facet.second.vertex[2].y}) ||
-                    unscale(point).y() > std::max({facet.second.vertex[0].y, facet.second.vertex[1].y, facet.second.vertex[2].y}))
-                {
-                    continue;
-                }
-
-                //check if point is inside of Triangle
-                if (Slic3r::Geometry::Point_in_triangle(
-                    Vec2f(unscale(point).x(), unscale(point).y()),
-                    Vec2f(facet.second.vertex[0].x, facet.second.vertex[0].y),
-                    Vec2f(facet.second.vertex[1].x, facet.second.vertex[1].y),
-                    Vec2f(facet.second.vertex[2].x, facet.second.vertex[2].y))
-                    && (facet.second.normal.z != 0))
-                {
-                    coord_t z = Slic3r::Geometry::Project_point_on_plane(Vec3f(facet.second.vertex[0].x,facet.second.vertex[0].y,facet.second.vertex[0].z),
-                                                             Vec3f(facet.second.normal.x,facet.second.normal.y,facet.second.normal.z),
-                                                             point);
-
-                    //Shift down when on lower layer
-                    point.nonplanar_z = z - scale_(distance_to_top);
-                    //break;
-                }
-            }
-        }
-    }
-
-    // Then check all line intersections, cut line on intersection and project new point
-    std::vector<Vec3crd>::size_type size = path->polyline.points.size();
-    for (std::vector<Vec3crd>::size_type i = 0; i < size-1; ++i)
-    {
-        Pointf3s intersections;
-        // check against every facet if lines intersect
-        for (auto& surface : m_nonplanar_surfaces) {
-            float distance_to_top = surface.stats.max.z - this->layer()->print_z;
-            for(auto& facet : surface.mesh) {
-                for(int j= 0; j < 3; j++) {
-                    // TODO precheck for faster computation
-                    Vec3d p1 = Vec3d(scale_(facet.second.vertex[j].x), scale_(facet.second.vertex[j].y), scale_(facet.second.vertex[j].z));
-                    Vec3d p2 = Vec3d(scale_(facet.second.vertex[(j+1) % 3].x), scale_(facet.second.vertex[(j+1) % 3].y), scale_(facet.second.vertex[(j+1) % 3].z));
-                    Vec3d* p = Slic3r::Geometry::Line_intersection(p1, p2, path->polyline.points[i], path->polyline.points[i+1]);
-
-                    if (p) {
-                        // add distance to top for every added point
-                        p->z() = p->z() - scale_(distance_to_top);
-                        intersections.push_back(*p);
-                    }
-                }
-            }
-        }
-
-        // Stop if no intersections are found
-        if (intersections.size() == 0) continue;
-
-        // sort found intersectons if there are more than 1
-        if ( intersections.size() > 1 ){
-            if (abs(path->polyline.points[i+1].x() - path->polyline.points[i].x()) >= abs(path->polyline.points[i+1].y() - path->polyline.points[i].y()) ) {
-                // sort by X
-                if(path->polyline.points[i].x() < path->polyline.points[i+1].x()) {
-                    std::sort(intersections.begin(), intersections.end(), smallerX);
-                }else {
-                    std::sort(intersections.begin(), intersections.end(), greaterX);
-                }
-            } else {
-                // sort by Y
-                if(path->polyline.points[i].y() < path->polyline.points[i+1].y()) {
-                    std::sort(intersections.begin(), intersections.end(), smallerY);
-                }else {
-                    std::sort(intersections.begin(), intersections.end(), greaterY);
-                }
-            }
-        }
-
-        // remove duplicates
-        Pointf3s::iterator point = intersections.begin();
-        while (point != intersections.end()-1) {
-            bool delete_point = false;
-            Pointf3s::iterator point2 = point;
-            ++point2;
-            //compare with next point if they are the same, delete current point
-            if ((*point).x() == (*point2).x() && (*point).y() == (*point2).y()) {
-                    //remove duplicate point
-                    delete_point = true;
-                    point = intersections.erase(point);
-            }
-            //continue loop when no point is removed. Otherwise the new point is set while deleting the old one.
-            if (!delete_point) {
-                ++point;
-            }
-        }
-
-        //insert new points into array
-        for (Vec3d p : intersections)
-        {
-            Point *pt = new Point(p.x(), p.y());
-            pt->nonplanar_z = p.z();
-            path->polyline.points.insert(path->polyline.points.begin()+i+1, *pt);
-        }
-
-        //modifiy array boundary
-        i = i + intersections.size();
-        size = size + intersections.size();
-    }
-}
-
-void
-LayerRegion::correct_z_on_path(ExtrusionPath *path)
-{
-    for (Point& point : path->polyline.points) {
-        if(point.nonplanar_z == -1) {
-            point.nonplanar_z = scale_(this->layer()->print_z);
-        }
-    }
+    this->export_region_fill_surfaces_to_svg(debug_out_path("LayerRegion-fill_surfaces-%s-%d.svg", name, idx ++).c_str());
 }
 
 }

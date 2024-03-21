@@ -24,6 +24,7 @@
 #include "slic3r/GUI/I18N.hpp"
 
 #include <algorithm>
+#include <execution>
 #include <iterator>
 #include <exception>
 #include <cstdlib>
@@ -95,6 +96,8 @@
 #include "DesktopIntegrationDialog.hpp"
 #include "SendSystemInfoDialog.hpp"
 #include "Downloader.hpp"
+#include "PhysicalPrinterDialog.hpp"
+#include "WifiConfigDialog.hpp"
 
 #include "BitmapCache.hpp"
 #include "Notebook.hpp"
@@ -291,12 +294,10 @@ private:
             version = _L("Version") + " " + std::string(SLIC3R_VERSION);
 
             // credits infornation
-            credits = title + " " +
-                _L("is based on Slic3r by Alessandro Ranellucci and the RepRap community.") + "\n" +
-                _L("Developed by Prusa Research.") + "\n\n" +
-                title + " " + _L("is licensed under the") + " " + _L("GNU Affero General Public License, version 3") + ".\n\n" +
-                _L("Contributions by Vojtech Bubnik, Enrico Turri, Oleksandra Iushchenko, Tamas Meszaros, Lukas Matena, Vojtech Kral, David Kocik and numerous others.") + "\n\n" +
-                _L("Artwork model by Creative Tools");
+            credits = "\n" + title + " " +
+                _L("is based on Slic3r by Alessandro Ranellucci and the RepRap community.") + "\n\n" +
+                _L("Developed by PLEC³ᵈ.") + "\n\n" +
+                _L("Licensed under GNU AGPLv3.") + "\n\n\n\n\n\n\n";
 
             title_font = version_font = credits_font = init_font;
         }
@@ -488,7 +489,7 @@ static const FileWildcards file_wildcards_by_type[FT_SIZE] = {
     /* FT_STEP */    { "STEP files"sv,      { ".stp"sv, ".step"sv } },    
     /* FT_AMF */     { "AMF files"sv,       { ".amf"sv, ".zip.amf"sv, ".xml"sv } },
     /* FT_3MF */     { "3MF files"sv,       { ".3mf"sv } },
-    /* FT_GCODE */   { "G-code files"sv,    { ".gcode"sv, ".gco"sv, ".g"sv, ".ngc"sv } },
+    /* FT_GCODE */   { "G-code files"sv,    { ".gcode"sv, ".gco"sv, ".bgcode"sv, ".bgc"sv, ".g"sv, ".ngc"sv } },
     /* FT_MODEL */   { "Known files"sv,     { ".stl"sv, ".obj"sv, ".3mf"sv, ".amf"sv, ".zip.amf"sv, ".xml"sv, ".step"sv, ".stp"sv } },
     /* FT_PROJECT */ { "Project files"sv,   { ".3mf"sv, ".amf"sv, ".zip.amf"sv } },
     /* FT_FONTS */   { "Font files"sv,      { ".ttc"sv, ".ttf"sv } },
@@ -791,15 +792,10 @@ void GUI_App::post_init()
             this->mainframe->load_config_file(this->init_params->load_configs.back());
         // If loading a 3MF file, the config is loaded from the last one.
         if (!this->init_params->input_files.empty()) {
-#if 1 // #ysFIXME_delete_after_test_of
             wxArrayString fns;
             for (const std::string& name : this->init_params->input_files)
                 fns.Add(from_u8(name));
             if (plater()->load_files(fns) && this->init_params->input_files.size() == 1) {
-#else
-            const std::vector<size_t> res = this->plater()->load_files(this->init_params->input_files, true, true);
-            if (!res.empty() && this->init_params->input_files.size() == 1) {
-#endif
                 // Update application titlebar when opening a project file
                 const std::string& filename = this->init_params->input_files.front();
                 if (boost::algorithm::iends_with(filename, ".amf") ||
@@ -830,13 +826,16 @@ void GUI_App::post_init()
     // This is ugly but I honestly found no better way to do it.
     // Neither wxShowEvent nor wxWindowCreateEvent work reliably.
     if (this->preset_updater) { // G-Code Viewer does not initialize preset_updater.
+
+#if 0 // This code was moved to EVT_CONFIG_UPDATER_SYNC_DONE bind - after preset_updater finishes synchronization.
         if (! this->check_updates(false))
             // Configuration is not compatible and reconfigure was refused by the user. Application is closing.
             return;
+#endif
         CallAfter([this] {
             // preset_updater->sync downloads profile updates on background so it must begin after config wizard finished.
             bool cw_showed = this->config_wizard_startup();
-            this->preset_updater->sync(preset_bundle);
+            this->preset_updater->sync(preset_bundle, this);
             if (! cw_showed) {
                 // The CallAfter is needed as well, without it, GL extensions did not show.
                 // Also, we only want to show this when the wizard does not, so the new user
@@ -930,8 +929,8 @@ void GUI_App::init_app_config()
 {
 	// Profiles for the alpha are stored into the PrusaSlicer-alpha directory to not mix with the current release.
 
-    SetAppName(SLIC3R_APP_KEY);
-//	SetAppName(SLIC3R_APP_KEY "-alpha");
+//    SetAppName(SLIC3R_APP_KEY);
+	SetAppName(SLIC3R_APP_KEY "-alpha");
 //  SetAppName(SLIC3R_APP_KEY "-beta");
 
 
@@ -1096,6 +1095,16 @@ bool GUI_App::OnInit()
     }
 }
 
+static int get_app_font_pt_size(const AppConfig* app_config)
+{
+    if (!app_config->has("font_pt_size"))
+        return -1;
+    const int font_pt_size     = atoi(app_config->get("font_pt_size").c_str());
+    const int max_font_pt_size = wxGetApp().get_max_font_pt_size();
+
+    return (font_pt_size > max_font_pt_size) ? max_font_pt_size : font_pt_size;
+}
+
 bool GUI_App::on_init_inner()
 {
     // Set initialization of image handlers before any UI actions - See GH issue #7469
@@ -1247,7 +1256,6 @@ bool GUI_App::on_init_inner()
     
     if (! older_data_dir_path.empty()) {
         preset_bundle->import_newer_configs(older_data_dir_path);
-        //app_config->save(); // It looks like redundant call of save. ysFIXME delete after testing
     }
 
     if (is_editor()) {
@@ -1291,11 +1299,17 @@ bool GUI_App::on_init_inner()
             show_error(nullptr, evt.GetString());
         }); 
 
+        Bind(EVT_CONFIG_UPDATER_SYNC_DONE, [this](const wxCommandEvent& evt) {
+            this->check_updates(false);
+        });
+
     }
     else {
 #ifdef __WXMSW__ 
         if (app_config->get_bool("associate_gcode"))
             associate_gcode_files();
+        if (app_config->get_bool("associate_bgcode"))
+            associate_bgcode_files();
 #endif // __WXMSW__
     }
     
@@ -1328,7 +1342,7 @@ bool GUI_App::on_init_inner()
     if (!delayed_error_load_presets.empty())
         show_error(nullptr, delayed_error_load_presets);
 
-    mainframe = new MainFrame(app_config->has("font_size") ? atoi(app_config->get("font_size").c_str()) : -1);
+    mainframe = new MainFrame(get_app_font_pt_size(app_config));
     // hide settings tabs after first Layout
     if (is_editor())
         mainframe->select_tab(size_t(0));
@@ -1628,7 +1642,8 @@ void GUI_App::UpdateDVCDarkUI(wxDataViewCtrl* dvc, bool highlited/* = false*/)
 #ifdef _WIN32
     UpdateDarkUI(dvc, highlited ? dark_mode() : false);
 #ifdef _MSW_DARK_MODE
-    dvc->RefreshHeaderDarkMode(&m_normal_font);
+    if (!dvc->HasFlag(wxDV_NO_HEADER))
+        dvc->RefreshHeaderDarkMode(&m_normal_font);
 #endif //_MSW_DARK_MODE
     if (dvc->HasFlag(wxDV_ROW_LINES))
         dvc->SetAlternateRowColour(m_color_highlight_default);
@@ -1648,6 +1663,30 @@ void GUI_App::UpdateAllStaticTextDarkUI(wxWindow* parent)
             child->SetForegroundColour(m_color_label_default);
     }
 #endif
+}
+
+void GUI_App::SetWindowVariantForButton(wxButton* btn)
+{
+#ifdef __APPLE__
+    // This is a limit imposed by OSX. The way the native button widget is drawn only allows it to be stretched horizontally,
+    // and the vertical size is fixed. (see https://stackoverflow.com/questions/29083891/wxpython-button-size-being-ignored-on-osx)
+    // But standard height is possible to change using SetWindowVariant method (see https://docs.wxwidgets.org/3.0/window_8h.html#a879bccd2c987fedf06030a8abcbba8ac)
+    if (m_normal_font.GetPointSize() > 15) {
+        btn->SetWindowVariant(wxWINDOW_VARIANT_LARGE);
+        btn->SetFont(m_normal_font);
+    }
+#endif
+}
+
+int GUI_App::get_max_font_pt_size()
+{
+    const unsigned disp_count = wxDisplay::GetCount();
+    for (unsigned i = 0; i < disp_count; i++) {
+        const wxRect display_rect = wxDisplay(i).GetGeometry();
+        if (display_rect.width >= 2560 && display_rect.height >= 1440)
+            return 20;
+    }
+    return 15;
 }
 
 void GUI_App::init_fonts()
@@ -1757,9 +1796,26 @@ bool GUI_App::tabs_as_menu() const
     return app_config->get_bool("tabs_as_menu"); // || dark_mode();
 }
 
-wxSize GUI_App::get_min_size() const
+bool GUI_App::suppress_round_corners() const
 {
-    return wxSize(76*m_em_unit, 49 * m_em_unit);
+    return true;// app_config->get("suppress_round_corners") == "1";
+}
+
+wxSize GUI_App::get_min_size(wxWindow* display_win) const
+{
+    wxSize min_size(76*m_em_unit, 49 * m_em_unit);
+
+    const wxDisplay display = wxDisplay(display_win);
+    wxRect display_rect = display.GetGeometry();
+    display_rect.width  *= 0.75;
+    display_rect.height *= 0.75;
+
+    if (min_size.x > display_rect.GetWidth())
+        min_size.x = display_rect.GetWidth();
+    if (min_size.y > display_rect.GetHeight())
+        min_size.y = display_rect.GetHeight();
+
+    return min_size;
 }
 
 float GUI_App::toolbar_icon_scale(const bool is_limited/* = false*/) const
@@ -1834,7 +1890,7 @@ void GUI_App::recreate_GUI(const wxString& msg_name)
     dlg.Update(10, _L("Recreating") + dots);
 
     MainFrame *old_main_frame = mainframe;
-    mainframe = new MainFrame(app_config->has("font_size") ? atoi(app_config->get("font_size").c_str()) : -1);
+    mainframe = new MainFrame(get_app_font_pt_size(app_config));
     if (is_editor())
         // hide settings tabs after first Layout
         mainframe->select_tab(size_t(0));
@@ -2024,7 +2080,7 @@ void GUI_App::load_gcode(wxWindow* parent, wxString& input_file) const
 {
     input_file.Clear();
     wxFileDialog dialog(parent ? parent : GetTopWindow(),
-        _L("Choose one file (GCODE/.GCO/.G/.ngc/NGC):"),
+        _L("Choose one file (GCODE/GCO/G/BGCODE/BGC/NGC):"),
         app_config->get_last_dir(), "",
         file_wildcards(FT_GCODE), wxFD_OPEN | wxFD_FILE_MUST_EXIST);
 
@@ -2125,6 +2181,9 @@ int GUI_App::GetSingleChoiceIndex(const wxString& message,
 #ifdef _WIN32
     wxSingleChoiceDialog dialog(nullptr, message, caption, choices);
     wxGetApp().UpdateDlgDarkUI(&dialog);
+    auto children = dialog.GetChildren();
+    for (auto child : children)
+        child->SetFont(normal_font());
 
     dialog.SetSelection(initialSelection);
     return dialog.ShowModal() == wxID_OK ? dialog.GetSelection() : -1;
@@ -2449,6 +2508,7 @@ void GUI_App::add_config_menu(wxMenuBar *menu)
         // TODO: for when we're able to flash dictionaries
         // local_menu->Append(config_id_base + FirmwareMenuDict,  _L("Flash Language File"),    _L("Upload a language dictionary file into a Prusa printer"));
     }
+    local_menu->Append(config_id_base + ConfigMenuWifiConfigFile, _L("Wi-Fi Configuration File"), _L("Generate a file to be loaded by a Prusa printer to configure its Wi-Fi connection."));
 
     local_menu->Bind(wxEVT_MENU, [this, config_id_base](wxEvent &event) {
         switch (event.GetId() - config_id_base) {
@@ -2547,6 +2607,16 @@ void GUI_App::add_config_menu(wxMenuBar *menu)
         case ConfigMenuFlashFirmware:
             FirmwareDialog::run(mainframe);
             break;
+        case ConfigMenuWifiConfigFile:
+        {
+            std::string file_path;
+            WifiConfigDialog dialog(mainframe, file_path, removable_drive_manager());
+            if (dialog.ShowModal() == wxID_OK)
+            {
+                plater_->get_notification_manager()->push_exporting_finished_notification(file_path, boost::filesystem::path(file_path).parent_path().string(), true);
+            }
+        }
+        break;
         default:
             break;
         }
@@ -2588,6 +2658,8 @@ void GUI_App::open_preferences(const std::string& highlight_option /*= std::stri
     else {
         if (app_config->get_bool("associate_gcode"))
             associate_gcode_files();
+        if (app_config->get_bool("associate_bgcode"))
+            associate_bgcode_files();
     }
 #endif // _WIN32
 
@@ -2653,27 +2725,40 @@ std::vector<const PresetCollection*> GUI_App::get_active_preset_collections() co
 bool GUI_App::check_and_save_current_preset_changes(const wxString& caption, const wxString& header, bool remember_choice/* = true*/, bool dont_save_insted_of_discard/* = false*/)
 {
     if (has_current_preset_changes()) {
-        const std::string app_config_key = remember_choice ? "default_action_on_close_application" : "";
-        int act_buttons = ActionButtons::SAVE;
-        if (dont_save_insted_of_discard)
-            act_buttons |= ActionButtons::DONT_SAVE;
-        UnsavedChangesDialog dlg(caption, header, app_config_key, act_buttons);
-        std::string act = app_config_key.empty() ? "none" : wxGetApp().app_config->get(app_config_key);
-        if (act == "none" && dlg.ShowModal() == wxID_CANCEL)
-            return false;
+        // remove virtual extruders from config
+        if(wxGetApp().has_mixing_extruders()){
+            TabPrinter* tab_print = static_cast<TabPrinter*>(wxGetApp().get_tab(Preset::TYPE_PRINTER));
+            tab_print->extruders_count_changed(1);
+            //tab_print->init_options_list(); // m_options_list should be updated before UI updating
+            tab_print->update_dirty();
+            wxGetApp().plater()->remove_all_virtual_extruders();
+            wxGetApp().plater()->set_extruder_count(1);
+        }
+        if (has_current_preset_changes()) {
+            const std::string app_config_key = remember_choice ? "default_action_on_close_application" : "";
+            int act_buttons = ActionButtons::SAVE;
+            if (dont_save_insted_of_discard)
+                act_buttons |= ActionButtons::DONT_SAVE;
+            UnsavedChangesDialog dlg(caption, header, app_config_key, act_buttons);
+            std::string act = app_config_key.empty() ? "none" : wxGetApp().app_config->get(app_config_key);
+            if (act == "none" && dlg.ShowModal() == wxID_CANCEL)
+                return false;
 
-        if (dlg.save_preset())  // save selected changes
-        {
-            for (const std::pair<std::string, Preset::Type>& nt : dlg.get_names_and_types())
-                preset_bundle->save_changes_for_preset(nt.first, nt.second, dlg.get_unselected_options(nt.second));
+            if (dlg.save_preset())  // save selected changes
+            {
+                for (const std::pair<std::string, Preset::Type>& nt : dlg.get_names_and_types())
+                    preset_bundle->save_changes_for_preset(nt.first, nt.second, dlg.get_unselected_options(nt.second));
 
-            load_current_presets(false);
+                load_current_presets(false);
 
-            // if we saved changes to the new presets, we should to 
-            // synchronize config.ini with the current selections.
-            preset_bundle->export_selections(*app_config);
+                // if we saved changes to the new presets, we should to 
+                // synchronize config.ini with the current selections.
+                preset_bundle->export_selections(*app_config);
 
-            MessageDialog(nullptr, dlg.msg_success_saved_modifications(dlg.get_names_and_types().size())).ShowModal();
+                MessageDialog(nullptr, dlg.msg_success_saved_modifications(dlg.get_names_and_types().size())).ShowModal();
+            }
+            if(wxGetApp().has_mixing_extruders())
+                wxGetApp().plater()->rebuild_virtual_extruders();
         }
     }
 
@@ -2700,71 +2785,84 @@ void GUI_App::apply_keeped_preset_modifications()
 bool GUI_App::check_and_keep_current_preset_changes(const wxString& caption, const wxString& header, int action_buttons, bool* postponed_apply_of_keeped_changes/* = nullptr*/)
 {
     if (has_current_preset_changes()) {
-        bool is_called_from_configwizard = postponed_apply_of_keeped_changes != nullptr;
+        // remove virtual extruders from config
+        if(wxGetApp().has_mixing_extruders()){
+            TabPrinter* tab_print = static_cast<TabPrinter*>(wxGetApp().get_tab(Preset::TYPE_PRINTER));
+            tab_print->extruders_count_changed(1);
+            //tab_print->init_options_list(); // m_options_list should be updated before UI updating
+            tab_print->update_dirty();
+            wxGetApp().plater()->remove_all_virtual_extruders();
+            wxGetApp().plater()->set_extruder_count(1);
+        }
+        if (has_current_preset_changes()) {
+            bool is_called_from_configwizard = postponed_apply_of_keeped_changes != nullptr;
 
-        const std::string app_config_key = is_called_from_configwizard ? "" : "default_action_on_new_project";
-        UnsavedChangesDialog dlg(caption, header, app_config_key, action_buttons);
-        std::string act = app_config_key.empty() ? "none" : wxGetApp().app_config->get(app_config_key);
-        if (act == "none" && dlg.ShowModal() == wxID_CANCEL)
-            return false;
+            const std::string app_config_key = is_called_from_configwizard ? "" : "default_action_on_new_project";
+            UnsavedChangesDialog dlg(caption, header, app_config_key, action_buttons);
+            std::string act = app_config_key.empty() ? "none" : wxGetApp().app_config->get(app_config_key);
+            if (act == "none" && dlg.ShowModal() == wxID_CANCEL)
+                return false;
 
-        auto reset_modifications = [this, is_called_from_configwizard]() {
-            if (is_called_from_configwizard)
-                return; // no need to discared changes. It will be done fromConfigWizard closing
+            auto reset_modifications = [this, is_called_from_configwizard]() {
+                if (is_called_from_configwizard)
+                    return; // no need to discared changes. It will be done fromConfigWizard closing
 
-            PrinterTechnology printer_technology = preset_bundle->printers.get_edited_preset().printer_technology();
-            for (const Tab* const tab : tabs_list) {
-                if (tab->supports_printer_technology(printer_technology) && tab->current_preset_is_dirty())
-                    tab->m_presets->discard_current_changes();
-            }
-            load_current_presets(false);
-        };
-
-        if (dlg.discard())
-            reset_modifications();
-        else  // save selected changes
-        {
-            const auto& preset_names_and_types = dlg.get_names_and_types();
-            if (dlg.save_preset()) {
-                for (const std::pair<std::string, Preset::Type>& nt : preset_names_and_types)
-                    preset_bundle->save_changes_for_preset(nt.first, nt.second, dlg.get_unselected_options(nt.second));
-
-                // if we saved changes to the new presets, we should to 
-                // synchronize config.ini with the current selections.
-                preset_bundle->export_selections(*app_config);
-
-                wxString text = dlg.msg_success_saved_modifications(preset_names_and_types.size());
-                if (!is_called_from_configwizard)
-                    text += "\n\n" + _L("For new project all modifications will be reseted");
-
-                MessageDialog(nullptr, text).ShowModal();
-                reset_modifications();
-            }
-            else if (dlg.transfer_changes() && (dlg.has_unselected_options() || is_called_from_configwizard)) {
-                // execute this part of code only if not all modifications are keeping to the new project 
-                // OR this function is called when ConfigWizard is closed and "Keep modifications" is selected
-                for (const std::pair<std::string, Preset::Type>& nt : preset_names_and_types) {
-                    Preset::Type type = nt.second;
-                    Tab* tab = get_tab(type);
-                    std::vector<std::string> selected_options = dlg.get_selected_options(type);
-                    if (type == Preset::TYPE_PRINTER) {
-                        auto it = std::find(selected_options.begin(), selected_options.end(), "extruders_count");
-                        if (it != selected_options.end()) {
-                            // erase "extruders_count" option from the list
-                            selected_options.erase(it);
-                            // cache the extruders count
-                            static_cast<TabPrinter*>(tab)->cache_extruder_cnt();
-                        }
-                    }
-                    tab->cache_config_diff(selected_options);
-                    if (!is_called_from_configwizard)
+                PrinterTechnology printer_technology = preset_bundle->printers.get_edited_preset().printer_technology();
+                for (const Tab* const tab : tabs_list) {
+                    if (tab->supports_printer_technology(printer_technology) && tab->current_preset_is_dirty())
                         tab->m_presets->discard_current_changes();
                 }
-                if (is_called_from_configwizard)
-                    *postponed_apply_of_keeped_changes = true;
-                else
-                    apply_keeped_preset_modifications();
+                load_current_presets(false);
+            };
+
+            if (dlg.discard())
+                reset_modifications();
+            else  // save selected changes
+            {
+                const auto& preset_names_and_types = dlg.get_names_and_types();
+                if (dlg.save_preset()) {
+                    for (const std::pair<std::string, Preset::Type>& nt : preset_names_and_types)
+                        preset_bundle->save_changes_for_preset(nt.first, nt.second, dlg.get_unselected_options(nt.second));
+
+                    // if we saved changes to the new presets, we should to 
+                    // synchronize config.ini with the current selections.
+                    preset_bundle->export_selections(*app_config);
+
+                    wxString text = dlg.msg_success_saved_modifications(preset_names_and_types.size());
+                    if (!is_called_from_configwizard)
+                        text += "\n\n" + _L("For new project all modifications will be reseted");
+
+                    MessageDialog(nullptr, text).ShowModal();
+                    reset_modifications();
+                }
+                else if (dlg.transfer_changes() && (dlg.has_unselected_options() || is_called_from_configwizard)) {
+                    // execute this part of code only if not all modifications are keeping to the new project 
+                    // OR this function is called when ConfigWizard is closed and "Keep modifications" is selected
+                    for (const std::pair<std::string, Preset::Type>& nt : preset_names_and_types) {
+                        Preset::Type type = nt.second;
+                        Tab* tab = get_tab(type);
+                        std::vector<std::string> selected_options = dlg.get_selected_options(type);
+                        if (type == Preset::TYPE_PRINTER) {
+                            auto it = std::find(selected_options.begin(), selected_options.end(), "extruders_count");
+                            if (it != selected_options.end()) {
+                                // erase "extruders_count" option from the list
+                                selected_options.erase(it);
+                                // cache the extruders count
+                                static_cast<TabPrinter*>(tab)->cache_extruder_cnt();
+                            }
+                        }
+                        tab->cache_config_diff(selected_options);
+                        if (!is_called_from_configwizard)
+                            tab->m_presets->discard_current_changes();
+                    }
+                    if (is_called_from_configwizard)
+                        *postponed_apply_of_keeped_changes = true;
+                    else
+                        apply_keeped_preset_modifications();
+                }
             }
+            if(wxGetApp().has_mixing_extruders())
+                wxGetApp().plater()->rebuild_virtual_extruders();
         }
     }
 
@@ -2943,7 +3041,8 @@ ObjectSettings* GUI_App::obj_settings()
 
 ObjectList* GUI_App::obj_list()
 {
-    return sidebar().obj_list();
+    // If this method is called before plater_ has been initialized, return nullptr (to avoid a crash)
+    return plater_ ? sidebar().obj_list() : nullptr;
 }
 
 ObjectLayers* GUI_App::obj_layers()
@@ -2985,6 +3084,31 @@ Downloader* GUI_App::downloader()
     return m_downloader.get();
 }
 
+std::string GUI_App::run_command(std::string command){
+    char* cmd;
+    strcpy(cmd, command.c_str()); 
+    std::array<char, 128> buffer;
+    std::string result;
+
+    auto pipe = popen(cmd, "r"); // get rid of shared_ptr
+
+    if (!pipe) throw std::runtime_error("popen() failed!");
+
+    while (!feof(pipe)) {
+        if (fgets(buffer.data(), buffer.size(), pipe) != nullptr)
+            result += buffer.data();
+    }
+
+    auto rc = pclose(pipe);
+
+    if (rc == EXIT_SUCCESS) { // == 0
+
+    } else if (rc == EXIT_FAILURE) {  // EXIT_FAILURE is not used by all programs, maybe needs some adaptation.
+
+    }
+    return result;
+}
+
 // extruders count from selected printer preset
 int GUI_App::extruders_cnt() const
 {
@@ -2992,6 +3116,15 @@ int GUI_App::extruders_cnt() const
     return preset.printer_technology() == ptSLA ? 1 :
            preset.config.option<ConfigOptionFloats>("nozzle_diameter")->values.size();
 }
+
+int GUI_App::virtual_extruders_cnt() const
+{
+    const Preset& preset = preset_bundle->printers.get_selected_preset();
+    std::vector<int> num_virtual_extruders =
+           static_cast<std::vector<int>>(preset.config.option<ConfigOptionInts>("virtual_extruder")->values);
+    auto binary_op = [](int num1, int num2){return (num1>-1?1:0) + (num2>-1?1:0);};
+    return std::reduce(std::execution::par, num_virtual_extruders.begin(), num_virtual_extruders.end(), 0, binary_op);
+}    
 
 // extruders count from edited printer preset
 int GUI_App::extruders_edited_cnt() const
@@ -3007,20 +3140,20 @@ std::vector<std::string> GUI_App::get_stored_mixing_colors(){
     return preset.config.option<ConfigOptionStrings>("stored_mixing_colors")->values;
 }
 
-std::vector<std::string> GUI_App::get_mixing_extruder_colors(){
-    std::vector<std::string> out;// = {"#FFFFFF/#FF0000/#00FF00/#0000FF"};
+std::vector<std::vector<std::string>> GUI_App::get_mixing_extruder_colors(){
+    std::vector<std::vector<std::string>> out;// = {"#FFFFFF/#FF0000/#00FF00/#0000FF"};
     const Preset& preset = preset_bundle->printers.get_edited_preset();
     std::vector<int> colorcnt = preset.config.option<ConfigOptionInts>("multi_extruder_colors")->values;
     int cnt = 0;
     for(int colors: colorcnt){
         if(colors>0){ 
             ColorRGB tmp_col;
-            std::string tmp;
+            std::vector<std::string> tmp;
             char buf[32];
             for(int i = 1;i<=colors;i++){
                 sprintf(buf,"multi_extruder_color%i",i);
                 std::vector<std::string> ext_colors = preset.config.option<ConfigOptionStrings>(buf)->values;
-                if(ext_colors.at(cnt)!="") tmp += ext_colors.at(cnt) + (i<colors?"/":"");
+                if(ext_colors.at(cnt)!="") tmp.push_back(ext_colors.at(cnt));
             }
             out.push_back(tmp);
         }
@@ -3064,9 +3197,9 @@ wxString GUI_App::current_language_code_safe() const
 		{ "ja", 	"ja_JP", },
 		{ "ko", 	"ko_KR", },
 		{ "pl", 	"pl_PL", },
-		{ "uk", 	"uk_UA", },
-		{ "zh", 	"zh_CN", },
-		{ "ru", 	"ru_RU", },
+		//{ "uk", 	"uk_UA", },
+		//{ "zh", 	"zh_CN", },
+		//{ "ru", 	"ru_RU", },
 	};
 	wxString language_code = this->current_language_code().BeforeFirst('_');
 	auto it = mapping.find(language_code);
@@ -3424,6 +3557,11 @@ void GUI_App::associate_stl_files()
 void GUI_App::associate_gcode_files()
 {
     associate_file_type(L".gcode", L"PrusaSlicer.GCodeViewer.1", L"PrusaSlicerGCodeViewer", true);
+}
+
+void GUI_App::associate_bgcode_files()
+{
+    associate_file_type(L".bgcode", L"PrusaSlicer.GCodeViewer.1", L"PrusaSlicerGCodeViewer", true);
 }
 #endif // __WXMSW__
 

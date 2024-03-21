@@ -51,8 +51,7 @@ void CreateFontStyleImagesJob::process(Ctl &ctl)
         for (ExPolygon &shape : shapes) shape.translate(-bounding_box.min);
         
         // calculate conversion from FontPoint to screen pixels by size of font
-        const FontFile::Info &info = get_font_info(*item.font.font_file, item.prop);
-        double scale = item.prop.size_in_mm / info.unit_per_em * SHAPE_SCALE * m_input.ppm;
+        double scale = get_text_shape_scale(item.prop, *item.font.font_file);
         scales[index] = scale;
 
         //double scale = font_prop.size_in_mm * SCALING_FACTOR;
@@ -76,14 +75,14 @@ void CreateFontStyleImagesJob::process(Ctl &ctl)
     for (StyleManager::StyleImage &image : m_images) {
         image.offset.y() = offset_y;
         offset_y += image.tex_size.y+1;
-        if (m_width < image.tex_size.x) 
+        if (m_width < image.tex_size.x)
             m_width = image.tex_size.x;
     }
     m_height = offset_y;
     for (StyleManager::StyleImage &image : m_images) {
         const Point &o = image.offset;
         const ImVec2 &s = image.tex_size;
-        image.uv0 = ImVec2(o.x() / (double) m_width, 
+        image.uv0 = ImVec2(o.x() / (double) m_width,
                            o.y() / (double) m_height);
         image.uv1 = ImVec2((o.x() + s.x) / (double) m_width,
                            (o.y() + s.y) / (double) m_height);

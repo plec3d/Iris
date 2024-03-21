@@ -352,7 +352,7 @@ bool OctoPrint::upload(PrintHostUpload upload_data, ProgressFn prorgess_fn, Erro
         return true;
     } else {
         // There are multiple addresses - user needs to choose which to use.
-        size_t selected_index = resolved_addr.size(); 
+        size_t selected_index = resolved_addr.size();
         IPListDialog dialog(nullptr, boost::nowide::widen(m_host), resolved_addr, selected_index);
         if (dialog.ShowModal() == wxID_OK && selected_index < resolved_addr.size()) {    
             return upload_inner_with_resolved_ip(std::move(upload_data), prorgess_fn, error_fn, info_fn, resolved_addr[selected_index]);
@@ -784,7 +784,7 @@ bool PrusaLink::get_storage(wxArrayString& storage_path, wxArrayString& storage_
             for (const auto& si : storage) {
                 error_msg += GUI::format_wxstr(si.read_only ?
                                                                 // TRN %1% = storage path
-                                                                _L("%1% : read only") : 
+                                                                _L("%1% : read only") :
                                                                 // TRN %1% = storage path
                                                                 _L("%1% : no free space"), si.path) + L"\n";
             }

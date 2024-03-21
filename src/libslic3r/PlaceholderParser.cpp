@@ -283,7 +283,7 @@ namespace client
         void                set_s(const std::string &s) {
             if (this->type() == TYPE_STRING)
                 *m_data.s = s;
-            else 
+            else
                 this->set_s_take_ownership(new std::string(s));
         }
         void                set_s(std::string &&s) {
@@ -341,7 +341,7 @@ namespace client
             case TYPE_INT :
                 return expr(- this->i(), start_pos, this->it_range.end());
             case TYPE_DOUBLE:
-                return expr(- this->d(), start_pos, this->it_range.end()); 
+                return expr(- this->d(), start_pos, this->it_range.end());
             default:
                 this->throw_exception("Cannot apply unary minus operator.");
             }
@@ -359,7 +359,7 @@ namespace client
             case TYPE_INT:
                 return expr(this->i(), start_pos, this->it_range.end());
             case TYPE_DOUBLE:
-                return expr(static_cast<int>(this->d()), start_pos, this->it_range.end()); 
+                return expr(static_cast<int>(this->d()), start_pos, this->it_range.end());
             default:
                 this->throw_exception("Cannot convert to integer.");
             }
@@ -535,16 +535,16 @@ namespace client
                 // Both types are numeric.
                 switch (op) {
                     case '=':
-                        value = (lhs.type() == TYPE_DOUBLE || rhs.type() == TYPE_DOUBLE) ? 
+                        value = (lhs.type() == TYPE_DOUBLE || rhs.type() == TYPE_DOUBLE) ?
                             (std::abs(lhs.as_d() - rhs.as_d()) < 1e-8) : (lhs.i() == rhs.i());
                         break;
                     case '<':
-                        value = (lhs.type() == TYPE_DOUBLE || rhs.type() == TYPE_DOUBLE) ? 
+                        value = (lhs.type() == TYPE_DOUBLE || rhs.type() == TYPE_DOUBLE) ?
                             (lhs.as_d() < rhs.as_d()) : (lhs.i() < rhs.i());
                         break;
                     case '>':
                     default:
-                        value = (lhs.type() == TYPE_DOUBLE || rhs.type() == TYPE_DOUBLE) ? 
+                        value = (lhs.type() == TYPE_DOUBLE || rhs.type() == TYPE_DOUBLE) ?
                             (lhs.as_d() > rhs.as_d()) : (lhs.i() > rhs.i());
                         break;
                 }
@@ -686,11 +686,11 @@ namespace client
             out.set_b(false);
         }
         template<bool RegEx>
-        static void one_of_test(const expr &match, const expr &pattern, expr &out) { 
+        static void one_of_test(const expr &match, const expr &pattern, expr &out) {
             if (match.type() == TYPE_EMPTY) {
                 // Inside an if / else block to be skipped
                 out.reset();
-                return;            
+                return;
             }
             if (! out.b()) {
                 if (match.type() != TYPE_STRING)
@@ -712,7 +712,7 @@ namespace client
             if (match.type() == TYPE_EMPTY) {
                 // Inside an if / else block to be skipped
                 out.reset();
-                return;            
+                return;
             }
             if (! out.b()) {
                 if (match.type() != TYPE_STRING)
@@ -725,7 +725,7 @@ namespace client
         {
             if (lhs.type() == TYPE_EMPTY)
                 // Inside an if / else block to be skipped
-                return;            
+                return;
             bool value = false;
             if (lhs.type() == TYPE_BOOL && rhs.type() == TYPE_BOOL) {
                 value = (op == '|') ? (lhs.b() || rhs.b()) : (lhs.b() && rhs.b());
@@ -789,7 +789,7 @@ namespace client
         const DynamicConfig     *config                 = nullptr;
         // Config provided as a parameter to PlaceholderParser invocation, evaluated after the two configs above.
         const DynamicConfig     *config_override        = nullptr;
-        // Config provided as a parameter to PlaceholderParser invocation, containing variables that will be read out 
+        // Config provided as a parameter to PlaceholderParser invocation, containing variables that will be read out
         // and processed by the PlaceholderParser callee.
         mutable DynamicConfig   *config_outputs         = nullptr;
         // Local variables, read / write
@@ -908,7 +908,7 @@ namespace client
         }
 
         static void legacy_variable_expansion2(
-            const MyContext *ctx, 
+            const MyContext *ctx,
             IteratorRange   &opt_key,
             IteratorRange   &opt_vector_index,
             std::string     &output)
@@ -1356,7 +1356,7 @@ namespace client
                     // scalar_var = ( scalar )
                     scalar_variable_assign_scalar_expression(ctx, lhs, il.front());
                 else
-                    // scalar_var = () 
+                    // scalar_var = ()
                     // or
                     // scalar_var = ( scalar, scalar, ... )
                     ctx->throw_exception("Cannot assign a vector value to a scalar variable.", lhs.it_range);
@@ -1433,7 +1433,7 @@ namespace client
                     // Output is numeric.
                     if (num_double == 0)
                         opt_new = std::make_unique<ConfigOptionInts>();
-                    else 
+                    else
                         opt_new = std::make_unique<ConfigOptionFloats>();
                 }
                 OptWithPos lhs_opt{ opt_new.get(), lhs.it_range, true };
@@ -1546,7 +1546,7 @@ namespace client
         static void evaluate_index(expr &expr_index, int &output)
         {
             if (expr_index.type() != expr::TYPE_EMPTY) {
-                if (expr_index.type() != expr::TYPE_INT)                
+                if (expr_index.type() != expr::TYPE_INT)
                     expr_index.throw_exception("Non-integer index is not allowed to address a vector variable.");
                 output = expr_index.i();
             }
@@ -1651,6 +1651,7 @@ namespace client
 
             // Check whether the table X values are sorted.
             double x = expr_x.as_d();
+            assert(! std::isnan(x));
             bool   evaluated = false;
             for (size_t i = 1; i < table.table.size(); ++i) {
                 double x0 = table.table[i - 1].x;
@@ -1801,13 +1802,13 @@ namespace client
     // This parser is to be used inside a raw[] directive to accept a single valid UTF-8 character.
     // If an invalid UTF-8 sequence is encountered, a qi::expectation_failure is thrown.
     struct ascii_char_skipper_parser : public utf8_char_parser
-    { 
-        // This function is called during the actual parsing process 
+    {
+        // This function is called during the actual parsing process
         template <typename Iterator, typename Context, typename Skipper, typename Attribute>
         bool parse(Iterator &first, Iterator const &last, Context &context, Skipper const &skipper, Attribute &attr) const
-        { 
+        {
             Iterator it = first;
-            // Let the UTF-8 parser throw if it encounters an invalid UTF-8 sequence. 
+            // Let the UTF-8 parser throw if it encounters an invalid UTF-8 sequence.
             if (! utf8_char_parser::parse(it, last, context, skipper, attr))
                 return false;
             char c = *first;
@@ -1825,7 +1826,7 @@ namespace client
         // This function is called during error handling to create a human readable string for the error context.
         template <typename Context>
         spirit::info what(Context&) const
-        { 
+        {
             return spirit::info("ASCII7_char");
         }
     };
@@ -1833,28 +1834,28 @@ namespace client
     struct FactorActions {
         static void set_start_pos(Iterator &start_pos, expr &out)
                 { out.it_range = IteratorRange(start_pos, start_pos); }
-        static void int_(const MyContext *ctx, int &value, Iterator &end_pos, expr &out) { 
+        static void int_(const MyContext *ctx, int &value, Iterator &end_pos, expr &out) {
             if (ctx->skipping()) {
                 out.reset();
                 out.it_range.end() = end_pos;
             } else
                 out = expr(value, out.it_range.begin(), end_pos);
         }
-        static void double_(const MyContext *ctx, double &value, Iterator &end_pos, expr &out) { 
+        static void double_(const MyContext *ctx, double &value, Iterator &end_pos, expr &out) {
             if (ctx->skipping()) {
                 out.reset();
                 out.it_range.end() = end_pos;
             } else
                 out = expr(value, out.it_range.begin(), end_pos);
         }
-        static void bool_(const MyContext *ctx, bool &value, Iterator &end_pos, expr &out) { 
+        static void bool_(const MyContext *ctx, bool &value, Iterator &end_pos, expr &out) {
             if (ctx->skipping()) {
                 out.reset();
                 out.it_range.end() = end_pos;
             } else
                 out = expr(value, out.it_range.begin(), end_pos);
         }
-        static void string_(const MyContext *ctx, IteratorRange &it_range, expr &out) { 
+        static void string_(const MyContext *ctx, IteratorRange &it_range, expr &out) {
             if (ctx->skipping()) {
                 out.reset();
                 out.it_range = it_range;
@@ -1996,7 +1997,7 @@ namespace client
             else_macros.name("else_macros");
 
             // Blocks do not require a separating semicolon.
-            block = 
+            block =
                     (kw["if"] > if_else_output(_r1)[_val = _1])
                 // (kw["switch"] ...
                 ;
@@ -2106,12 +2107,12 @@ namespace client
             multiplicative_expression.name("multiplicative_expression");
 
             assignment_statement =
-                variable_reference(_r1)[_a = _1] >> '=' > 
+                (variable_reference(_r1)[_a = _1] >> '=') >
                 (       // Consumes also '(' conditional_expression ')', that means enclosing an expression into braces makes it a single value vector initializer.
                          initializer_list(_r1)[px::bind(&MyContext::vector_variable_assign_initializer_list, _r1, _a, _1)]
                         // Process it before conditional_expression, as conditional_expression requires a vector reference to be augmented with an index.
                         // Only process such variable references, which return a naked vector variable.
-                    |  eps(px::bind(&MyContext::is_vector_variable_reference, _a)) >> 
+                    |  eps(px::bind(&MyContext::is_vector_variable_reference, _a)) >>
                             variable_reference(_r1)[px::bind(&MyContext::copy_vector_variable_to_vector_variable, _r1, _a, _1)]
                        // Would NOT consume '(' conditional_expression ')' because such value was consumed with the expression above.
                     |  conditional_expression(_r1)
@@ -2119,7 +2120,7 @@ namespace client
                     |  (kw["repeat"] > "(" > additive_expression(_r1) > "," > conditional_expression(_r1) > ")")
                             [px::bind(&MyContext::vector_variable_assign_array, _r1, _a, _1, _2)]
                 );
-  
+
             new_variable_statement =
                 (kw["local"][_a = false] | kw["global"][_a = true]) > identifier[px::bind(&MyContext::new_old_variable, _r1, _a, _1, _b)] > lit('=') >
                 (       // Consumes also '(' conditional_expression ')', that means enclosing an expression into braces makes it a single value vector initializer.
@@ -2175,7 +2176,7 @@ namespace client
 
             one_of = (unary_expression(_r1)[_a = _1] > one_of_list(_r1, _a))[_val = _2];
             one_of.name("one_of");
-            one_of_list = 
+            one_of_list =
                 eps[px::bind(&expr::one_of_test_init, _val)] >
                 (   ( ',' > *(
                         (
@@ -2193,7 +2194,7 @@ namespace client
             interpolate_table.name("interpolate_table");
             interpolate_table_list =
                 eps[px::bind(&InterpolateTableContext::init, _r2)] >
-                ( *(( lit('(') > unary_expression(_r1) > ',' > unary_expression(_r1) > ')' ) 
+                ( *(( lit('(') > unary_expression(_r1) > ',' > unary_expression(_r1) > ')' )
                     [px::bind(&InterpolateTableContext::add_pair, _1, _2, _val)] >> -lit(',')) );
             interpolate_table.name("interpolate_table_list");
 

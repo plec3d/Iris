@@ -12,11 +12,15 @@ const vec3 LIGHT_TOP_DIR = vec3(-0.4574957, 0.4574957, 0.7624929);
 const vec3 LIGHT_FRONT_DIR = vec3(0.6985074, 0.1397015, 0.6985074);
 #define LIGHT_FRONT_DIFFUSE  (0.3 * INTENSITY_CORRECTION)
 
-#define INTENSITY_AMBIENT    0.3
+#define INTENSITY_AMBIENT    0.5
 
 const vec3  ZERO    = vec3(0.0, 0.0, 0.0);
 const float EPSILON = 0.0001;
-
+//BBS: add grey and orange
+//const vec3 GREY = vec3(0.9, 0.9, 0.9);
+const vec3 ORANGE = vec3(0.8, 0.4, 0.0);
+const vec3 LightRed = vec3(0.78, 0.0, 0.0);
+const vec3 LightBlue = vec3(0.73, 1.0, 1.0);
 uniform vec4 uniform_color;
 
 uniform bool volume_mirrored;
@@ -26,6 +30,37 @@ uniform mat3 view_normal_matrix;
 
 varying vec3 clipping_planes_dots;
 varying vec4 model_pos;
+varying vec4 world_pos;
+
+struct SlopeDetection
+{
+    bool actived;
+	 float normal_z;
+    mat3 volume_world_normal_matrix;
+};
+uniform SlopeDetection slope;
+
+//BBS: add wireframe logic
+varying vec3 barycentric_coordinates;
+float edgeFactor(float lineWidth) {
+    vec3 d = fwidth(barycentric_coordinates);
+    vec3 a3 = smoothstep(vec3(0.0), d * lineWidth, barycentric_coordinates);
+    return min(min(a3.x, a3.y), a3.z);
+}
+
+vec3 wireframe(vec3 fill, vec3 stroke, float lineWidth) {
+    return mix(stroke, fill, edgeFactor(lineWidth));
+	//if (any(lessThan(barycentric_coordinates, vec3(0.005, 0.005, 0.005))))
+	//	return vec3(1.0, 0.0, 0.0);
+	//else
+	//	return fill;
+}
+
+vec3 getWireframeColor(vec3 fill) {
+    float brightness = 0.2126 * fill.r + 0.7152 * fill.g + 0.0722 * fill.b;
+    return (brightness > 0.75) ? vec3(0.11, 0.165, 0.208) : vec3(0.988, 0.988, 0.988);
+}
+uniform bool show_wireframe;
 
 void main()
 {

@@ -470,7 +470,7 @@ void GLGizmoFdmSupports::update_model_object() const
     }
 }
 
-void GLGizmoFdmSupports::update_from_model_object()
+void GLGizmoFdmSupports::update_from_model_object(bool first_update)
 {
     wxBusyCursor wait;
 

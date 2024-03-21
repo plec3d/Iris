@@ -167,6 +167,7 @@ wxDECLARE_EVENT(EVT_GLCANVAS_WIPETOWER_MOVED, Vec3dEvent);
 wxDECLARE_EVENT(EVT_GLCANVAS_INSTANCE_ROTATED, SimpleEvent);
 wxDECLARE_EVENT(EVT_GLCANVAS_RESET_SKEW, SimpleEvent);
 wxDECLARE_EVENT(EVT_GLCANVAS_INSTANCE_SCALED, SimpleEvent);
+wxDECLARE_EVENT(EVT_GLCANVAS_INSTANCE_MIRRORED, SimpleEvent);
 wxDECLARE_EVENT(EVT_GLCANVAS_WIPETOWER_ROTATED, Vec3dEvent);
 wxDECLARE_EVENT(EVT_GLCANVAS_ENABLE_ACTION_BUTTONS, Event<bool>);
 wxDECLARE_EVENT(EVT_GLCANVAS_UPDATE_GEOMETRY, Vec3dsEvent<2>);
@@ -183,7 +184,6 @@ wxDECLARE_EVENT(EVT_GLCANVAS_REDO, SimpleEvent);
 wxDECLARE_EVENT(EVT_GLCANVAS_COLLAPSE_SIDEBAR, SimpleEvent);
 wxDECLARE_EVENT(EVT_GLCANVAS_RESET_LAYER_HEIGHT_PROFILE, SimpleEvent);
 wxDECLARE_EVENT(EVT_GLCANVAS_ADAPTIVE_LAYER_HEIGHT_PROFILE, Event<float>);
-wxDECLARE_EVENT(EVT_GLCANVAS_SNAP_TO_HORIZONTAL_LAYER_HEIGHT_PROFILE, SimpleEvent);
 wxDECLARE_EVENT(EVT_GLCANVAS_SMOOTH_LAYER_HEIGHT_PROFILE, HeightProfileSmoothEvent);
 wxDECLARE_EVENT(EVT_GLCANVAS_RELOAD_FROM_DISK, SimpleEvent);
 wxDECLARE_EVENT(EVT_GLCANVAS_RENDER_TIMER, wxTimerEvent/*RenderTimerEvent*/);
@@ -288,7 +288,6 @@ class GLCanvas3D
 		void accept_changes(GLCanvas3D& canvas);
         void reset_layer_height_profile(GLCanvas3D& canvas);
         void adaptive_layer_height_profile(GLCanvas3D& canvas, float quality_factor);
-        void snap_to_horizontal_layer_height_profile(GLCanvas3D& canvas);
         void smooth_layer_height_profile(GLCanvas3D& canvas, const HeightProfileSmoothingParams& smoothing_params);
 
         static float get_cursor_z_relative(const GLCanvas3D& canvas);
@@ -467,6 +466,14 @@ public:
         Cross
     };
 
+    //BBS: add canvas type for assemble view usage
+    enum ECanvasType
+    {
+        CanvasView3D = 0,
+        CanvasPreview = 1,
+        CanvasAssembleView = 2,
+    };
+
     struct ArrangeSettings
     {
         float distance           = 6.f;
@@ -501,6 +508,7 @@ private:
     GLGizmosManager m_gizmos;
     GLToolbar m_main_toolbar;
     GLToolbar m_undoredo_toolbar;
+    ECanvasType m_canvas_type;
     std::array<ClippingPlane, 2> m_clipping_planes;
     ClippingPlane m_camera_clipping_plane;
     bool m_use_clipping_planes;
@@ -540,6 +548,11 @@ private:
     ECursorType m_cursor_type;
     GLSelectionRectangle m_rectangle_selection;
     std::vector<int> m_hover_volume_idxs;
+    bool m_toolpath_outside{ false };
+    
+    //BBS if explosion_ratio is changed, need to update volume bounding box
+    mutable float m_explosion_ratio = 1.0;
+    mutable Vec3d m_rotation_center{ 0.0, 0.0, 0.0};
 
     // Following variable is obsolete and it should be safe to remove it.
     // I just don't want to do it now before a release (Lukas Matena 24.3.2019)
@@ -620,6 +633,7 @@ private:
         // list of transforms used to render the contours
         std::vector<std::pair<size_t, Transform3d>> m_instances;
         bool m_evaluating{ false };
+        bool m_dragging{ false };
 
         std::vector<std::pair<Pointf3s, Transform3d>> m_hulls_2d_cache;
 
@@ -628,6 +642,10 @@ private:
         void update_instances_trafos(const std::vector<Transform3d>& trafos);
         void render();
         bool empty() const { return m_contours.empty(); }
+
+        void start_dragging() { m_dragging = true; }
+        bool is_dragging() const { return m_dragging; }
+        void stop_dragging() { m_dragging = false; }
 
         friend class GLCanvas3D;
     };
@@ -685,6 +703,8 @@ public:
     bool is_initialized() const { return m_initialized; }
 
     void set_context(wxGLContext* context) { m_context = context; }
+    void set_type(ECanvasType type) { m_canvas_type = type; }
+    ECanvasType get_canvas_type() { return m_canvas_type; }
 
     wxGLCanvas* get_wxglcanvas() { return m_canvas; }
 	const wxGLCanvas* get_wxglcanvas() const { return m_canvas; }
@@ -731,12 +751,12 @@ public:
     void reset_gcode_toolpaths() { m_gcode_viewer.reset(); }
     const GCodeViewer::SequentialView& get_gcode_sequential_view() const { return m_gcode_viewer.get_sequential_view(); }
     void update_gcode_sequential_view_current(unsigned int first, unsigned int last) { m_gcode_viewer.update_sequential_view_current(first, last); }
-
+    const float get_scale() const;
     void toggle_sla_auxiliaries_visibility(bool visible, const ModelObject* mo = nullptr, int instance_idx = -1);
     void toggle_model_objects_visibility(bool visible, const ModelObject* mo = nullptr, int instance_idx = -1, const ModelVolume* mv = nullptr);
     void update_instance_printable_state_for_object(size_t obj_idx);
     void update_instance_printable_state_for_objects(const std::vector<size_t>& object_idxs);
-
+    void reset_explosion_ratio() { m_explosion_ratio = 1.0; }
     void set_config(const DynamicPrintConfig* config);
     const DynamicPrintConfig *config() const { return m_config; }
     void set_process(BackgroundSlicingProcess* process);
@@ -780,7 +800,6 @@ public:
 
     void reset_layer_height_profile();
     void adaptive_layer_height_profile(float quality_factor);
-    void snap_to_horizontal_layer_height_profile();
     void smooth_layer_height_profile(const HeightProfileSmoothingParams& smoothing_params);
 
     bool is_reload_delayed() const;
@@ -909,7 +928,7 @@ public:
         inline double rotation() const { return m_rotation; }
         inline const Vec2d bb_size() const { return m_bb.size(); }
         inline const BoundingBoxf& bounding_box() const { return m_bb; }
-        
+
         void apply_wipe_tower() const;
 
         static void apply_wipe_tower(Vec2d pos, double rot);
@@ -968,11 +987,18 @@ public:
 
     void reset_sequential_print_clearance() {
         m_sequential_print_clearance.m_evaluating = false;
-        m_sequential_print_clearance.set_contours(ContoursList(), false);
+        if (m_sequential_print_clearance.is_dragging())
+            m_sequential_print_clearance_first_displacement = true;
+        else
+            m_sequential_print_clearance.set_contours(ContoursList(), false);
+        set_as_dirty();
+        request_extra_frame();
     }
 
     void set_sequential_print_clearance_contours(const ContoursList& contours, bool generate_fill) {
         m_sequential_print_clearance.set_contours(contours, generate_fill);
+        set_as_dirty();
+        request_extra_frame();
     }
 
     bool is_sequential_print_clearance_empty() const {
@@ -984,7 +1010,11 @@ public:
     }
 
     void update_sequential_clearance(bool force_contours_generation);
-    void set_sequential_clearance_as_evaluating() { m_sequential_print_clearance.m_evaluating = true; }
+    void set_sequential_clearance_as_evaluating() {
+        m_sequential_print_clearance.m_evaluating = true;
+        set_as_dirty();
+        request_extra_frame();
+    }
 
     const Print* fff_print() const;
     const SLAPrint* sla_print() const;
@@ -1105,10 +1135,14 @@ private:
     bool _deactivate_arrange_menu();
 
     float get_overlay_window_width() { return LayersEditing::get_overlay_window_width(); }
+
+#if ENABLE_BINARIZED_GCODE_DEBUG_WINDOW
+    void show_binary_gcode_debug_window();
+#endif // ENABLE_BINARIZED_GCODE_DEBUG_WINDOW
 };
 
 const ModelVolume *get_model_volume(const GLVolume &v, const Model &model);
-const ModelVolume *get_model_volume(const ObjectID &volume_id, const ModelObjectPtrs &objects);
+ModelVolume *get_model_volume(const ObjectID &volume_id, const ModelObjectPtrs &objects);
 ModelVolume *get_model_volume(const GLVolume &v, const ModelObjectPtrs &objects);
 ModelVolume *get_model_volume(const GLVolume &v, const ModelObject &object);
 

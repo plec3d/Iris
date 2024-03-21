@@ -73,6 +73,36 @@ void glAssertRecentCallImpl(const char* file_name, unsigned int line, const char
 }
 #endif // HAS_GLSAFE
 
+float FullyTransparentMaterialThreshold  = 0.1f;
+float FullTransparentModdifiedToFixAlpha = 0.3f;
+float FULL_BLACK_THRESHOLD = 0.18f;
+
+std::vector<Slic3r::ColorRGBA> get_extruders_colors()
+{
+    Slic3r::ColorRGBA              rgba_color;
+    std::vector<std::string>       colors        = Slic3r::GUI::wxGetApp().plater()->get_extruder_colors_from_plater_config();
+    std::vector<Slic3r::ColorRGBA> colors_out(colors.size());
+    for (const std::string &color : colors) {
+        Slic3r::decode_color(color, rgba_color);
+        size_t color_idx      = &color - &colors.front();
+        colors_out[color_idx] = rgba_color;
+    }
+
+    return colors_out;
+}
+
+Slic3r::ColorRGBA adjust_color_for_rendering(const Slic3r::ColorRGBA &colors)
+{
+    if (colors.a() < FullyTransparentMaterialThreshold) { // completely transparent
+        return {1, 1, 1, FullTransparentModdifiedToFixAlpha};
+    }
+    else if(colors.r() < FULL_BLACK_THRESHOLD && colors.g() < FULL_BLACK_THRESHOLD && colors.b() < FULL_BLACK_THRESHOLD) { // black
+        return {FULL_BLACK_THRESHOLD, FULL_BLACK_THRESHOLD, FULL_BLACK_THRESHOLD, colors.a()};
+    }
+    else
+        return colors;
+}
+
 namespace Slic3r {
 
 const float GLVolume::SinkingContours::HalfWidth = 0.25f;
@@ -248,10 +278,13 @@ GLVolume::GLVolume(float r, float g, float b, float a)
     color = { r, g, b, a };
     set_render_color(color);
 }
+// BBS
+float GLVolume::explosion_ratio = 1.0;
+float GLVolume::last_explosion_ratio = 1.0;
 
 void GLVolume::set_render_color(bool force_transparent)
 {
-    bool outside = is_outside || is_below_printbed();
+    bool outside = is_outside || (!is_modifier && is_below_printbed());
 
     if (force_native_color || force_neutral_color) {
         if (outside && shader_outside_printer_detection_enabled)
@@ -388,7 +421,7 @@ void GLVolume::set_range(double min_z, double max_z)
     }
 }
 
-void GLVolume::render()
+/*void GLVolume::render()
 {
     if (!is_active)
         return;
@@ -410,6 +443,101 @@ void GLVolume::render()
 
     if (is_left_handed)
         glsafe(::glFrontFace(GL_CCW));
+}*/
+
+void GLVolume::render()
+{
+    if (!is_active)
+        return;
+
+    GLShaderProgram *shader = GUI::wxGetApp().get_current_shader();
+    if (shader == nullptr)
+        return;
+
+    ModelObjectPtrs &model_objects = GUI::wxGetApp().model().objects;
+    std::vector<ColorRGBA> colors = get_extruders_colors();
+
+    simple_render(shader, model_objects, colors);
+}
+
+//BBS add render for simple case
+void GLVolume::simple_render(GLShaderProgram* shader, ModelObjectPtrs& model_objects, std::vector<ColorRGBA> extruder_colors)
+{
+    if (this->is_left_handed())
+        glFrontFace(GL_CW);
+    glsafe(::glCullFace(GL_BACK));
+
+    bool color_volume = false;
+    ModelObject* model_object = nullptr;
+    ModelVolume* model_volume = nullptr;
+    do {
+        if ((!printable) || object_idx() >= model_objects.size())
+            break;
+        model_object = model_objects[object_idx()];
+
+        if (volume_idx() >=  model_object->volumes.size())
+            break;
+        model_volume = model_object->volumes[volume_idx()];
+        if (model_volume->mmu_segmentation_facets.empty())
+            break;
+
+        color_volume = true;
+        if (model_volume->mmu_segmentation_facets.timestamp() != mmuseg_ts) {
+            mmuseg_models.clear();
+            std::vector<indexed_triangle_set> its_per_color;
+            model_volume->mmu_segmentation_facets.get_facets(*model_volume, its_per_color);
+            mmuseg_models.resize(its_per_color.size());
+            for (int idx = 0; idx < its_per_color.size(); idx++) {
+                mmuseg_models[idx].init_from(its_per_color[idx]);
+            }
+
+            mmuseg_ts = model_volume->mmu_segmentation_facets.timestamp();
+        }
+    } while (0);
+
+    if (color_volume) {
+        // when force_transparent, we need to keep the alpha
+        if (force_native_color && render_color.is_transparent()) {
+            for (auto &extruder_color : extruder_colors)
+                extruder_color.a(render_color.a());
+        }
+
+        for (int idx = 0; idx < mmuseg_models.size(); idx++) {
+            GUI::GLModel &m = mmuseg_models[idx];
+            if (!m.is_initialized())
+                continue;
+
+            if (idx == 0) {
+                int extruder_id = model_volume->extruder_id();
+                //to make black not too hard too see
+                ColorRGBA new_color = adjust_color_for_rendering(extruder_colors[extruder_id - 1]);
+                m.set_color(new_color);
+            }
+            else {
+                if (idx <= extruder_colors.size()) {
+                    //to make black not too hard too see
+                    ColorRGBA new_color = adjust_color_for_rendering(extruder_colors[idx - 1]);
+                    m.set_color(new_color);
+                }
+                else {
+                    //to make black not too hard too see
+                    ColorRGBA new_color = adjust_color_for_rendering(extruder_colors[0]);
+                    m.set_color(new_color);
+                }
+            }
+            if (tverts_range == std::make_pair<size_t, size_t>(0, -1))
+                m.render();
+            else
+                m.render(this->tverts_range);
+        }
+    } else {
+        if (tverts_range == std::make_pair<size_t, size_t>(0, -1))
+            model.render();
+        else
+            model.render(this->tverts_range);
+    }
+    if (this->is_left_handed())
+        glFrontFace(GL_CCW);
 }
 
 bool GLVolume::is_sla_support() const { return this->composite_id.volume_id == -int(slaposSupportTree); }
@@ -630,7 +758,7 @@ void GLVolumeCollection::load_object_auxiliary(
         v.shader_outside_printer_detection_enabled = (step == slaposSupportTree || step == slaposDrillHoles);
         v.set_instance_transformation(model_instance.get_transformation());
     };
- 
+
     if (milestone == SLAPrintObjectStep::slaposDrillHoles) {
         if (print_object->get_parts_to_slice().size() > 1) {
             // Get the mesh.
@@ -1453,8 +1581,8 @@ void _3DScene::extrusionentity_to_verts(const ExtrusionPath& extrusion_path, flo
     polyline.remove_duplicate_points();
     polyline.translate(copy);
     const Lines               lines = polyline.lines();
-    std::vector<double> widths(lines.size(), extrusion_path.width);
-    std::vector<double> heights(lines.size(), extrusion_path.height);
+    std::vector<double> widths(lines.size(), extrusion_path.width());
+    std::vector<double> heights(lines.size(), extrusion_path.height());
     thick_lines_to_verts(lines, widths, heights, false, print_z, geometry);
 }
 
@@ -1470,8 +1598,8 @@ void _3DScene::extrusionentity_to_verts(const ExtrusionLoop& extrusion_loop, flo
         polyline.translate(copy);
         const Lines lines_this = polyline.lines();
         append(lines, lines_this);
-        widths.insert(widths.end(), lines_this.size(), extrusion_path.width);
-        heights.insert(heights.end(), lines_this.size(), extrusion_path.height);
+        widths.insert(widths.end(), lines_this.size(), extrusion_path.width());
+        heights.insert(heights.end(), lines_this.size(), extrusion_path.height());
     }
     thick_lines_to_verts(lines, widths, heights, true, print_z, geometry);
 }
@@ -1488,8 +1616,8 @@ void _3DScene::extrusionentity_to_verts(const ExtrusionMultiPath& extrusion_mult
         polyline.translate(copy);
         const Lines lines_this = polyline.lines();
         append(lines, lines_this);
-        widths.insert(widths.end(), lines_this.size(), extrusion_path.width);
-        heights.insert(heights.end(), lines_this.size(), extrusion_path.height);
+        widths.insert(widths.end(), lines_this.size(), extrusion_path.width());
+        heights.insert(heights.end(), lines_this.size(), extrusion_path.height());
     }
     thick_lines_to_verts(lines, widths, heights, false, print_z, geometry);
 }

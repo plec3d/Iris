@@ -176,12 +176,13 @@ bool MeshClipper::has_valid_contour() const
     return m_result && std::any_of(m_result->cut_islands.begin(), m_result->cut_islands.end(), [](const CutIsland& isl) { return !isl.expoly.empty(); });
 }
 
-std::vector<Vec3d> MeshClipper::point_per_contour() const
-{
-    assert(m_result);
+std::vector<Vec3d> MeshClipper::point_per_contour() const {
     std::vector<Vec3d> out;
-    
-    for (const CutIsland& isl : m_result->cut_islands) {
+    if (m_result == std::nullopt) {
+        return out;
+    }
+    assert(m_result);
+    for (auto isl : m_result->cut_islands) {
         assert(isl.expoly.contour.size() > 2);
         // Now return a point lying inside the contour but not in a hole.
         // We do this by taking a point lying close to the edge, repeating
@@ -426,7 +427,7 @@ void MeshRaycaster::line_from_mouse_pos(const Vec2d& mouse_pos, const Transform3
 
 bool MeshRaycaster::unproject_on_mesh(const Vec2d& mouse_pos, const Transform3d& trafo, const Camera& camera,
                                       Vec3f& position, Vec3f& normal, const ClippingPlane* clipping_plane,
-                                      size_t* facet_idx) const
+                                      size_t* facet_idx, bool sinking_limit) const
 {
     Vec3d point;
     Vec3d direction;
@@ -446,8 +447,8 @@ bool MeshRaycaster::unproject_on_mesh(const Vec2d& mouse_pos, const Transform3d&
     // Also, remove anything below the bed (sinking objects).
     for (i=0; i<hits.size(); ++i) {
         Vec3d transformed_hit = trafo * hits[i].position();
-        if (transformed_hit.z() >= SINKING_Z_THRESHOLD &&
-            (! clipping_plane || ! clipping_plane->is_point_clipped(transformed_hit)))
+        if (transformed_hit.z() >= (sinking_limit ? SINKING_Z_THRESHOLD : -std::numeric_limits<double>::max()) &&
+            (!clipping_plane || !clipping_plane->is_point_clipped(transformed_hit)))
             break;
     }
 

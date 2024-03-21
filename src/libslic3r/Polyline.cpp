@@ -16,7 +16,6 @@
 #include "ExPolygon.hpp"
 #include "Line.hpp"
 #include "Polygon.hpp"
-#include "SVG.hpp"
 #include <iostream>
 #include <utility>
 
@@ -63,9 +62,7 @@ void Polyline::clip_end(double distance)
         Vec2d  v    = this->last_point().cast<double>() - last_point;
         double lsqr = v.squaredNorm();
         if (lsqr > distance * distance) {
-            Point p((last_point + v * (distance / sqrt(lsqr))).cast<coord_t>());
-            p.nonplanar_z = this->last_point().nonplanar_z;
-            this->points.emplace_back(p);
+            this->points.emplace_back((last_point + v * (distance / sqrt(lsqr))).cast<coord_t>());
             return;
         }
         distance -= sqrt(lsqr);
@@ -116,9 +113,7 @@ Points Polyline::equally_spaced_points(double distance) const
             continue;
         }
         double take = segment_length - (len - distance);  // how much we take of this segment
-        Point p((p1 + v * (take / v.norm())).cast<coord_t>());
-        p.nonplanar_z = (*it).nonplanar_z;
-        points.emplace_back(p);
+        points.emplace_back((p1 + v * (take / v.norm())).cast<coord_t>());
         -- it;
         len = - take;
     }
@@ -163,8 +158,10 @@ void Polyline::split_at(const Point &point, Polyline* p1, Polyline* p2) const
     }
 
     if (this->points.front() == point) {
+        //FIXME why is p1 NOT empty as in the case above?
         *p1 = { point };
         *p2 = *this;
+        return;
     }
 
     auto  min_dist2    = std::numeric_limits<double>::max();
@@ -217,6 +214,33 @@ BoundingBox get_extents(const Polylines &polylines)
     return bb;
 }
 
+// Return True when erase some otherwise False.
+bool remove_same_neighbor(Polyline &polyline) {
+    Points &points = polyline.points;
+    if (points.empty())
+        return false;
+    auto last = std::unique(points.begin(), points.end());
+
+    // no duplicits
+    if (last == points.end())
+        return false;
+
+    points.erase(last, points.end());
+    return true;
+}
+
+bool remove_same_neighbor(Polylines &polylines){
+    if (polylines.empty())
+        return false;
+    bool exist = false;
+    for (Polyline &polyline : polylines)
+        exist |= remove_same_neighbor(polyline);
+    // remove empty polylines
+    polylines.erase(std::remove_if(polylines.begin(), polylines.end(), [](const Polyline &p) { return p.points.size() <= 1; }), polylines.end());
+    return exist;
+}
+
+
 const Point& leftmost_point(const Polylines &polylines)
 {
     if (polylines.empty())
@@ -263,7 +287,6 @@ std::pair<int, Point> foot_pt(const Points &polyline, const Point &pt)
         if (double d2 = line_alg::distance_to_squared(Line(prev, *it), pt, &foot_pt); d2 < d2_min) {
             d2_min      = d2;
             foot_pt_min = foot_pt;
-            foot_pt_min.nonplanar_z = (*it).nonplanar_z;
             it_proj     = it;
         }
         prev = *it;
@@ -289,7 +312,6 @@ void ThickPolyline::clip_end(double distance)
         assert(this->width.size() == (this->points.size() - 1) * 2);
         while (distance > 0) {
             Vec2d last_point = this->last_point().cast<double>();
-            coord_t last_z = this->last_point().nonplanar_z;
             this->points.pop_back();
             if (this->points.empty()) {
                 assert(this->width.empty());
@@ -303,9 +325,7 @@ void ThickPolyline::clip_end(double distance)
             double   vec_length_sqr = vec.squaredNorm();
             if (vec_length_sqr > distance * distance) {
                 double t = (distance / std::sqrt(vec_length_sqr));
-                Point p((last_point + vec * t).cast<coord_t>());
-                p.nonplanar_z = last_z;
-                this->points.emplace_back(p);
+                this->points.emplace_back((last_point + vec * t).cast<coord_t>());
                 this->width.emplace_back(last_width + width_diff * t);
                 assert(this->width.size() == (this->points.size() - 1) * 2);
                 return;
@@ -352,30 +372,5 @@ Lines3 Polyline3::lines() const
     }
     return lines;
 }
-
-bool export_to_svg(const char *path, const Polyline &polyline, BoundingBox bbox, const float stroke_width)
-{
-    SVG svg(path, bbox);
-    svg.draw(polyline, "black", stroke_width);
-    svg.Close();
-    return true;
-}
-
-bool export_to_svg(const char *path, const Polylines &polylines, BoundingBox bbox, const float stroke_width)
-{
-    SVG svg(path, bbox);
-    svg.draw(polylines, "black", stroke_width);
-    svg.Close();
-    return true;
-}
-
-bool export_to_svg(const char *path, const ThickPolylines &polylines, BoundingBox bbox, const float stroke_width)
-{
-    SVG svg(path, bbox);
-    svg.draw(polylines, "black", stroke_width);
-    svg.Close();
-    return true;
-}
-
 
 }

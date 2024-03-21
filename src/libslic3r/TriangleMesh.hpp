@@ -26,7 +26,7 @@ namespace Slic3r {
 
 class TriangleMesh;
 class TriangleMeshSlicer;
-
+struct Groove;
 struct RepairedMeshErrors {
     // How many edges were united by merging their end points with some other end points in epsilon neighborhood?
     int           edges_fixed               = 0;
@@ -103,7 +103,8 @@ public:
     TriangleMesh(std::vector<Vec3f> &&vertices, const std::vector<Vec3i> &&faces);
     explicit TriangleMesh(const indexed_triangle_set &M);
     explicit TriangleMesh(indexed_triangle_set &&M, const RepairedMeshErrors& repaired_errors = RepairedMeshErrors());
-    void clear() { this->its.clear(); m_stats.clear(); }
+    void clear() { this->its.clear(); this->m_stats.clear(); }
+    bool from_stl(stl_file& stl, bool repair = true);
     bool ReadSTLFile(const char* input_file, bool repair = true);
     bool write_ascii(const char* output_file);
     bool write_binary(const char* output_file);
@@ -132,7 +133,7 @@ public:
     void merge(const TriangleMesh &mesh);
     ExPolygons horizontal_projection() const;
     // 2D convex hull of a 3D mesh projected into the Z=0 plane.
-    Polygon convex_hull();
+    Polygon convex_hull() const;
     BoundingBoxf3 bounding_box() const;
     // Returns the bbox of this TriangleMesh transformed by the given transformation
     BoundingBoxf3 transformed_bounding_box(const Transform3d &trafo) const;
@@ -162,11 +163,15 @@ public:
     void   restore_optional() {}
 
     const TriangleMeshStats& stats() const { return m_stats; }
-    
+
+    void set_init_shift(const Vec3d &offset) { m_init_shift = offset; }
+    Vec3d get_init_shift() const { return m_init_shift; }
+
     indexed_triangle_set its;
 
 private:
     TriangleMeshStats m_stats;
+    Vec3d m_init_shift {0.0, 0.0, 0.0};
 };
 
 // Index of face indices incident with a vertex index.
@@ -199,7 +204,7 @@ private:
 // Used for chaining slice lines into polygons.
 std::vector<Vec3i> its_face_edge_ids(const indexed_triangle_set &its);
 std::vector<Vec3i> its_face_edge_ids(const indexed_triangle_set &its, std::function<void()> throw_on_cancel_callback);
-std::vector<Vec3i> its_face_edge_ids(const indexed_triangle_set &its, const std::vector<char> &face_mask);
+std::vector<Vec3i> its_face_edge_ids(const indexed_triangle_set &its, const std::vector<bool> &face_mask);
 // Having the face neighbors available, assign unique edge IDs to face edges for chaining of polygons over slices.
 std::vector<Vec3i> its_face_edge_ids(const indexed_triangle_set &its, std::vector<Vec3i> &face_neighbors, bool assign_unbound_edges = false, int *num_edges = nullptr);
 
@@ -215,8 +220,6 @@ void its_flip_triangles(indexed_triangle_set &its);
 // or more than two faces share the same edge position!
 int its_merge_vertices(indexed_triangle_set &its, bool shrink_to_fit = true);
 
-// Calculate number of degenerate faces. There should be no degenerate faces in a nice mesh.
-int its_num_degenerate_faces(const indexed_triangle_set &its);
 // Remove degenerate faces, return number of faces removed.
 int its_remove_degenerate_faces(indexed_triangle_set &its, bool shrink_to_fit = true);
 
@@ -224,8 +227,8 @@ int its_remove_degenerate_faces(indexed_triangle_set &its, bool shrink_to_fit = 
 int its_compactify_vertices(indexed_triangle_set &its, bool shrink_to_fit = true);
 
 // store part of index triangle set
-bool its_store_triangle_to_obj(const indexed_triangle_set &its, const char *obj_filename, size_t triangle_index);
-bool its_store_triangles_to_obj(const indexed_triangle_set &its, const char *obj_filename, const std::vector<size_t>& triangles);
+bool its_store_triangle(const indexed_triangle_set &its, const char *obj_filename, size_t triangle_index);
+bool its_store_triangles(const indexed_triangle_set &its, const char *obj_filename, const std::vector<size_t>& triangles);
 
 std::vector<indexed_triangle_set> its_split(const indexed_triangle_set &its);
 std::vector<indexed_triangle_set> its_split(const indexed_triangle_set &its, std::vector<Vec3i> &face_neighbors);
@@ -278,20 +281,50 @@ inline int its_triangle_edge_index(const stl_triangle_vertex_indices &triangle_i
            triangle_edge(0) == triangle_indices[2] && triangle_edge(1) == triangle_indices[0] ? 2 : -1;
 }
 
-using its_triangle = std::array<stl_vertex, 3>;
-
-inline its_triangle its_triangle_vertices(const indexed_triangle_set &its,
-                                          const Vec3i &face)
+// juedge whether two triangles has the same vertices
+inline bool its_triangle_vertex_the_same(const stl_triangle_vertex_indices &triangle_indices_1, const stl_triangle_vertex_indices &triangle_indices_2)
 {
-    return {its.vertices[face(0)],
-            its.vertices[face(1)],
-            its.vertices[face(2)]};
+    bool ret = false;
+    if (triangle_indices_1[0] == triangle_indices_2[0])
+    {
+        if ((triangle_indices_1[1] ==  triangle_indices_2[1])
+            && (triangle_indices_1[2] ==  triangle_indices_2[2]))
+            ret = true;
+        else if ((triangle_indices_1[1] ==  triangle_indices_2[2])
+            && (triangle_indices_1[2] ==  triangle_indices_2[1]))
+            ret = true;
+    }
+    else if (triangle_indices_1[0] == triangle_indices_2[1])
+    {
+        if ((triangle_indices_1[1] ==  triangle_indices_2[0])
+            && (triangle_indices_1[2] ==  triangle_indices_2[2]))
+            ret = true;
+        else if ((triangle_indices_1[1] ==  triangle_indices_2[2])
+            && (triangle_indices_1[2] ==  triangle_indices_2[0]))
+            ret = true;
+    }
+    else if (triangle_indices_1[0] == triangle_indices_2[2])
+    {
+        if ((triangle_indices_1[1] ==  triangle_indices_2[0])
+            && (triangle_indices_1[2] ==  triangle_indices_2[1]))
+            ret = true;
+        else if ((triangle_indices_1[1] ==  triangle_indices_2[1])
+            && (triangle_indices_1[2] ==  triangle_indices_2[0]))
+            ret = true;
+    }
+
+    return ret;
 }
+
+
+using its_triangle = std::array<stl_vertex, 3>;
 
 inline its_triangle its_triangle_vertices(const indexed_triangle_set &its,
                                           size_t                      face_id)
 {
-    return its_triangle_vertices(its, its.indices[face_id]);
+    return {its.vertices[its.indices[face_id](0)],
+            its.vertices[its.indices[face_id](1)],
+            its.vertices[its.indices[face_id](2)]};
 }
 
 inline stl_normal its_unnormalized_normal(const indexed_triangle_set &its,
@@ -303,14 +336,6 @@ inline stl_normal its_unnormalized_normal(const indexed_triangle_set &its,
 
 float its_volume(const indexed_triangle_set &its);
 float its_average_edge_length(const indexed_triangle_set &its);
-
-/// <summary>
-/// Merge one triangle mesh to another
-/// Added triangle set will be consumed
-/// </summary>
-/// <param name="its">IN/OUT triangle mesh</param>
-/// <param name="its_add">Triangle mesh (will be consumed)</param>
-void its_merge(indexed_triangle_set &its, indexed_triangle_set &&its_add);
 
 void its_merge(indexed_triangle_set &A, const indexed_triangle_set &B);
 void its_merge(indexed_triangle_set &A, const std::vector<Vec3f> &triangles);
@@ -333,6 +358,7 @@ indexed_triangle_set    its_make_frustum_dowel(double r, double h, int sectorCou
 indexed_triangle_set    its_make_pyramid(float base, float height);
 indexed_triangle_set    its_make_sphere(double radius, double fa);
 indexed_triangle_set    its_make_snap(double r, double h, float space_proportion = 0.25f, float bulge_proportion = 0.125f);
+indexed_triangle_set    its_make_groove_plane(const Groove &cur_groove, float rotate_radius, std::vector<Vec3d> &cur_groove_vertices);
 
 indexed_triangle_set        its_convex_hull(const std::vector<Vec3f> &pts);
 inline indexed_triangle_set its_convex_hull(const indexed_triangle_set &its) { return its_convex_hull(its.vertices); }

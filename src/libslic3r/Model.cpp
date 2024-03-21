@@ -2,7 +2,7 @@
 ///|/ Copyright (c) 2021 Boleslaw Ciesielski
 ///|/ Copyright (c) 2019 John Drake @foxox
 ///|/ Copyright (c) 2019 Sijmen Schoon
-///|/ Copyright (c) Slic3r 2014 - 2016 Alessandro Ranellucci @alranel
+///|/ Copyright (c) Slic3r 204 - 2016 Alessandro Ranellucci @alranel
 ///|/ Copyright (c) 2015 Maksim Derbasov @ntfshard
 ///|/
 ///|/ ported from lib/Slic3r/Model.pm:
@@ -40,7 +40,7 @@
 
 #include "SVG.hpp"
 #include <Eigen/Dense>
-#include "GCodeWriter.hpp"
+#include "GCode/GCodeWriter.hpp"
 
 namespace Slic3r {
 
@@ -164,7 +164,6 @@ Model Model::read_from_archive(const std::string& input_file, DynamicPrintConfig
 {
     assert(config != nullptr);
     assert(config_substitutions != nullptr);
-
     Model model;
 
     bool result = false;
@@ -459,8 +458,8 @@ void Model::convert_multipart_object(unsigned int max_extruders)
     //FIXME copy the config etc?
 
     unsigned int extruder_counter = 0;
-	for (const ModelObject* o : this->objects)
-    	for (const ModelVolume* v : o->volumes) {
+	for (const ModelObject* o : this->objects){
+        for (const ModelVolume* v : o->volumes) {
             // If there are more than one object, put all volumes together 
             // Each object may contain any number of volumes and instances
             // The volumes transformations are relative to the object containing them...
@@ -482,6 +481,11 @@ void Model::convert_multipart_object(unsigned int max_extruders)
                 	copy_volume(object->add_volume(*v))->set_transformation(i->get_transformation() * trafo_volume);                    
             }
         }
+        for(int col: o->mmu_indices_map)
+            object->mmu_indices_map.push_back(col);
+        for(auto &col: o->mmu_colors)
+            object->mmu_colors.push_back(col);
+    }
 
     // commented-out to fix #2868
 //    object->add_instance();
@@ -636,19 +640,6 @@ ModelObject::~ModelObject()
 {
     this->clear_volumes();
     this->clear_instances();
-}
-
-bool ModelObject::load_app_config()
-{
-    if (!app_config) {
-        app_config = new AppConfig(AppConfig::EAppMode::Editor);
-        if(!app_config)
-            return false;
-        std::string error = app_config->load();
-        if(!error.empty())
-            return false;
-    }
-    return true;
 }
 
 // maintains the m_model pointer
@@ -1115,9 +1106,6 @@ void ModelObject::ensure_on_bed(bool allow_negative_z)
 {
     double z_offset = 0.0;
 
-    if(load_app_config() && app_config->get_bool("antigravity"))
-        return;
-    
     if (allow_negative_z) {
         if (parts_count() == 1) {
             const double min_z = this->min_z();
@@ -1336,7 +1324,7 @@ void ModelObject::clone_for_cut(ModelObject** obj)
     (*obj)->input_file.clear();
 }
 
-bool ModelVolume::is_the_only_one_part() const 
+bool ModelVolume::is_the_only_one_part() const
 {
     if (m_type != ModelVolumeType::MODEL_PART)
         return false;
@@ -2035,6 +2023,13 @@ indexed_triangle_set FacetsAnnotation::get_facets(const ModelVolume& mv, Enforce
     return selector.get_facets(type);
 }
 
+void FacetsAnnotation::get_facets(const ModelVolume& mv, std::vector<indexed_triangle_set>& facets_per_type) const
+{
+    TriangleSelector selector(mv.mesh());
+    selector.deserialize(m_data, false);
+    selector.get_facets(facets_per_type);
+}
+
 indexed_triangle_set FacetsAnnotation::get_facets_strict(const ModelVolume& mv, EnforcerBlockerType type) const
 {
     TriangleSelector selector(mv.mesh());
@@ -2066,9 +2061,6 @@ void FacetsAnnotation::reset()
     this->touch();
 }
 
-// Following function takes data from a triangle and encodes it as string
-// of hexadecimal numbers (one digit per triangle). Used for 3MF export,
-// changing it may break backwards compatibility !!!!!
 std::string FacetsAnnotation::get_triangle_as_string(int triangle_idx) const
 {
     std::string out;
@@ -2079,15 +2071,15 @@ std::string FacetsAnnotation::get_triangle_as_string(int triangle_idx) const
         int end    = ++ triangle_it == m_data.first.end() ? int(m_data.second.size()) : triangle_it->second;
         while (offset < end) {
             int next_code = 0;
-            for (int i=3; i>=0; --i) {
+            for (int i=13; i>=0; --i) {
                 next_code = next_code << 1;
                 next_code |= int(m_data.second[offset + i]);
             }
-            offset += 4;
-
-            assert(next_code >=0 && next_code <= 15);
-            char digit = next_code < 10 ? next_code + '0' : (next_code-10)+'A';
-            out.insert(out.begin(), digit);
+            offset += 18;
+            assert(next_code >=0 && next_code <= 8464);
+            //std::string digit = std::to_string(base87list.at(std::floor(next_code/87)))+std::to_string(base87list.at(next_code%87));    
+            out.insert(out.begin(), (char)base87list.at(std::floor(next_code/87)));
+            out.insert(out.begin(), (char)base87list.at(next_code%87));
         }
     }
     return out;
@@ -2100,21 +2092,66 @@ void FacetsAnnotation::set_triangle_from_string(int triangle_id, const std::stri
     assert(! str.empty());
     assert(m_data.first.empty() || m_data.first.back().first < triangle_id);
     m_data.first.emplace_back(triangle_id, int(m_data.second.size()));
+    int c_type = str.compare(0,1,"O")==0?1:str.compare(0,1,"Z")==0?2:0;
+    std::string instr = str;
 
-    for (auto it = str.crbegin(); it != str.crend(); ++it) {
-        const char ch = *it;
-        int dec = 0;
-        if (ch >= '0' && ch<='9')
-            dec = int(ch - '0');
-        else if (ch >='A' && ch <= 'F')
-            dec = 10 + int(ch - 'A');
-        else
-            assert(false);
-
+    if(c_type>0)    
+        instr.erase(0,1);
+    int new_id = 0;
+    if(c_type == 2){
+        int dec = std::stoi(instr);
+        //dec += 2;
         // Convert to binary and append into code.
-        for (int i=0; i<4; ++i)
+        //int multi = std::floor(dec/16);
+        //dec = dec % 16;
+        m_data.second.push_back(0 & 0b01);
+        m_data.second.push_back(0 & 0b10);
+        //
+        for (int i=0; i<16; ++i)
             m_data.second.insert(m_data.second.end(), bool(dec & (1 << i)));
-    }
+        //m_data.second.insert(m_data.second.end(), { true, true });
+        /*if(triangle_id < m_extruder_ids.size()) 
+            m_extruder_ids.at(triangle_id).push_back(multi);
+        else
+            m_extruder_ids.push_back({multi});*/
+    }else
+        for (auto it = instr.crbegin(); it != instr.crend(); ++it) {
+            const char ch = *it;
+            int dec = 0;
+            if(c_type == 1){
+                if (ch >= '0' && ch<='9')
+                    dec = int(ch - '0');
+                else if (ch >='A' && ch <= 'F')
+                    dec = 10 + int(ch - 'A');
+                else
+                    assert(false);
+            }else{
+                dec = std::floor((int(ch) - 40)/87);
+                ++it;
+                const char cj = *it;
+                dec += (int(cj) - 40) % 87;
+                //dec -= 1;
+                /*if(color_map != nullptr){
+                    //BOOST_LOG_TRIVIAL(info) << "deca " << dec;
+                    //int deca = dec - 3;
+                    std::vector<int>::iterator it = std::find_if (color_map->begin(), color_map->end(), [dec](int i) {
+                        return (dec == i);
+                    });
+                    if(it != color_map->end())
+                        new_id = std::distance(color_map->begin(),it) + extruder_cnt;
+                    //BOOST_LOG_TRIVIAL(info) << "dec " << dec;
+                }*/
+            }
+            // Convert to binary and append into code.
+            //int multi = std::floor(dec/16);
+            //dec = dec % 16;
+            for (int i=0; i<18; ++i)
+                m_data.second.insert(m_data.second.end(), bool(dec & (1 << i)));
+            /*if(triangle_id < m_extruder_ids.size()) 
+                m_extruder_ids.at(triangle_id).push_back(multi);
+            else
+                m_extruder_ids.push_back({multi});*/
+        }
 }
 
 // Test whether the two models contain the same number of ModelObjects with the same set of IDs

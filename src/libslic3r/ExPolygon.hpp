@@ -64,8 +64,7 @@ public:
     bool contains(const Polylines &polylines) const;
     bool contains(const Point &point, bool border_result = true) const;
     bool contains_h(const Point &point) const;
-
-    // Approximate on boundary test.
+// Approximate on boundary test.
     bool on_boundary(const Point &point, double eps) const;
     // Projection of a point onto the polygon.
     Point point_projection(const Point &point) const;
@@ -385,6 +384,11 @@ inline Points to_points(const ExPolygon &expoly)
     return out;
 }
 
+inline void translate(ExPolygons &expolys, const Point &p) {
+    for (ExPolygon &expoly : expolys)
+        expoly.translate(p);
+}
+
 inline void polygons_append(Polygons &dst, const ExPolygon &src) 
 { 
     dst.reserve(dst.size() + src.holes.size() + 1);
@@ -473,6 +477,9 @@ std::vector<BoundingBox> get_extents_vector(const ExPolygons &polygons);
 // Test for duplicate points. The points are copied, sorted and checked for duplicates globally.
 bool has_duplicate_points(const ExPolygon &expoly);
 bool has_duplicate_points(const ExPolygons &expolys);
+
+// Return True when erase some otherwise False.
+bool remove_same_neighbor(ExPolygons &expolys);
 
 bool remove_sticks(ExPolygon &poly);
 void keep_largest_contour_only(ExPolygons &polygons);

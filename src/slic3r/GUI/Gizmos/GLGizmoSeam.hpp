@@ -34,7 +34,7 @@ private:
     bool on_init() override;
 
     void update_model_object() const override;
-    void update_from_model_object() override;
+    void update_from_model_object(bool first_update = false) override;
 
     void on_opening() override {}
     void on_shutdown() override;

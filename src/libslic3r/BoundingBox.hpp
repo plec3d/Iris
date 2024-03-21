@@ -23,7 +23,7 @@ public:
     bool defined;
     
     BoundingBoxBase() : min(PointType::Zero()), max(PointType::Zero()), defined(false) {}
-    BoundingBoxBase(const PointType &pmin, const PointType &pmax) : 
+    BoundingBoxBase(const PointType &pmin, const PointType &pmax) :
         min(pmin), max(pmax), defined(pmin.x() < pmax.x() && pmin.y() < pmax.y()) {}
     BoundingBoxBase(const PointType &p1, const PointType &p2, const PointType &p3) :
         min(p1), max(p1), defined(false) { merge(p2); merge(p3); }
@@ -73,7 +73,9 @@ private:
     template<bool IncludeBoundary = false, class BoundingBoxType, class It, class = IteratorOnly<It>>
     static void construct(BoundingBoxType &out, It from, It to)
     {
-        if (from != to) {
+        if (from == to) {
+            out.defined = false;
+        } else {
             auto it = from;
             out.min = it->template cast<typename PointType::Scalar>();
             out.max = out.min;
@@ -94,8 +96,8 @@ public:
     using PointsType = std::vector<PointType>;
 
     BoundingBox3Base() : BoundingBoxBase<PointType>() {}
-    BoundingBox3Base(const PointType &pmin, const PointType &pmax) : 
-        BoundingBoxBase<PointType>(pmin, pmax) 
+    BoundingBox3Base(const PointType &pmin, const PointType &pmax) :
+        BoundingBoxBase<PointType>(pmin, pmax)
         { if (pmin.z() >= pmax.z()) BoundingBoxBase<PointType>::defined = false; }
     BoundingBox3Base(const PointType &p1, const PointType &p2, const PointType &p3) :
         BoundingBoxBase<PointType>(p1, p1) { merge(p2); merge(p3); }

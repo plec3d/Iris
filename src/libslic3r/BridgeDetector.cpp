@@ -1,3 +1,9 @@
+///|/ Copyright (c) Prusa Research 2016 - 2021 Vojtěch Bubník @bubnikv
+///|/ Copyright (c) Slic3r 2014 - 2016 Alessandro Ranellucci @alranel
+///|/ Copyright (c) 2015 Maksim Derbasov @ntfshard
+///|/
+///|/ PrusaSlicer is released under the terms of the AGPLv3 or higher
+///|/
 #include "BridgeDetector.hpp"
 #include "ClipperUtils.hpp"
 #include "Geometry.hpp"
@@ -73,7 +79,7 @@ void BridgeDetector::initialize()
     */
 }
 
-bool BridgeDetector::detect_angle(double bridge_direction_override)
+bool BridgeDetector::detect_angle(double bridge_direction_override, const PrintRegionConfig *params)
 {
     
     if (this->_edges.empty() || this->_anchor_regions.empty()){
@@ -145,10 +151,10 @@ bool BridgeDetector::detect_angle(double bridge_direction_override)
                 for (int i = 0; i < _anchor_regions.size(); ++i) {
                     ExPolygon& poly = this->_anchor_regions[i];
                     BoundingBox& polybb = anchor_bb[i];
-                    /*if (polybb.contains(line.a) && poly.contains(line.a)) { // using short-circuit evaluation to test boundingbox and only then the other
+                    if (polybb.contains(line.a) && poly.contains(line.a)) { // using short-circuit evaluation to test boundingbox and only then the other
                         line_a_anchor_idx = i;
                         //candidates[i_angle].angle += 1.5*M_PI;
-                    }*/
+                    }
                     if (polybb.contains(line.b) && poly.contains(line.b)) { // using short-circuit evaluation to test boundingbox and only then the other
                         line_b_anchor_idx = i;
                     }
@@ -201,7 +207,7 @@ bool BridgeDetector::detect_angle(double bridge_direction_override)
                     }
                 }
                 if(good_line) {
-		            this->is_bridge = true;
+		    this->is_bridge = true;
                     // This line could be anchored at both side and goes over the void to bridge it in its middle.
                     //store stats
                     c.total_length_anchored += len;
@@ -365,15 +371,15 @@ bool BridgeDetector::detect_angle(double bridge_direction_override)
         c.coverage = 0;
         //ratio_anchored is 70% of the score
         double ratio_length_anchored = c.total_length_anchored / (c.total_length_anchored + c.total_length_free);
-        c.coverage = 7060. * ratio_length_anchored;
+        c.coverage = params->bds_ratio_length.value * ratio_length_anchored;
         double ratio_anchored = c.nb_lines_anchored / (c.nb_lines_anchored + c.nb_lines_free);
-        c.coverage += 0. * ratio_anchored;
+        c.coverage += params->bds_ratio_nr.value * ratio_anchored;
         //median is 35% (and need to invert it)
         double ratio_median = 1 - double(c.median_length_anchor - min_median_length) / (double)std::max(1., max_median_length - min_median_length);
-        c.coverage += 400. * ratio_median;
+        c.coverage += params->bds_median_length.value * ratio_median;
         //max is 0% (and need to invert it)
         double ratio_max = 1 - double(c.max_length_anchored - min_max_length) / (double)std::max(1., max_max_length - min_max_length);
-        c.coverage += -101.* ratio_max;
+        c.coverage += params->bds_max_length.value * ratio_max;
         //bonus for perimeter dir
         if (c.along_perimeter_length > 0)
             c.coverage += 20;

@@ -2,10 +2,13 @@ get_filename_component(_TEST_NAME ${CMAKE_CURRENT_LIST_DIR} NAME)
 
 add_executable(${_TEST_NAME}_tests 
 	${_TEST_NAME}_tests.cpp
+    test_line.cpp
+    test_point.cpp
 	test_3mf.cpp
 	test_aabbindirect.cpp
 	test_kdtreeindirect.cpp
 	test_arachne.cpp
+	test_arc_welder.cpp
 	test_clipper_offset.cpp
 	test_clipper_utils.cpp
 	test_color.cpp
@@ -38,8 +41,10 @@ add_executable(${_TEST_NAME}_tests
     test_astar.cpp
     test_anyptr.cpp
     test_jump_point_search.cpp
+    test_support_spots_generator.cpp
     ../data/prusaparts.cpp
     ../data/prusaparts.hpp
+     test_static_map.cpp
 	)
 
 if (TARGET OpenVDB::openvdb)

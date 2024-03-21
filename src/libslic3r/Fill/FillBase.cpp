@@ -21,7 +21,6 @@
 
 #include "FillBase.hpp"
 #include "FillArc.hpp"
-#include "FillSpiral.hpp"
 #include "FillConcentric.hpp"
 #include "FillHoneycomb.hpp"
 #include "Fill3DHoneycomb.hpp"
@@ -42,8 +41,7 @@ namespace Slic3r {
 Fill* Fill::new_from_type(const InfillPattern type)
 {
     switch (type) {
-    case ipArc:			        return new FillArc();
-    case ipSpiral:			    return new FillSpiral();
+    case ipArc:			return new FillArc();
     case ipConcentric:          return new FillConcentric();
     case ipHoneycomb:           return new FillHoneycomb();
     case ip3DHoneycomb:         return new Fill3DHoneycomb();
@@ -65,8 +63,7 @@ Fill* Fill::new_from_type(const InfillPattern type)
     case ipSupportBase:         return new FillSupportBase();
     case ipLightning:           return new FillLightning::Filler();
     case ipEnsuring:            return new FillEnsuring();
-    case ipAlterCentric:         return new FillConcentric();
-    default: throw Slic3r::InvalidArgument("Infill type unknown");
+    default: throw Slic3r::InvalidArgument("unknown type");
     }
 }
 

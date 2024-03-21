@@ -215,6 +215,11 @@ protected:
     virtual void on_render() = 0;
     virtual void on_render_input_window(float x, float y, float bottom_limit) {}
 
+    bool GizmoImguiBegin(const std::string& name, int flags);
+    void GizmoImguiEnd();
+    void GizmoImguiSetNextWIndowPos(float &x, float y, int flag, float pivot_x = 0.0f, float pivot_y = 0.0f);
+    void GizmoImguiSetNextWIndowPos(float &x, float y, float w, float h, int flag, float pivot_x = 0.0f, float pivot_y = 0.0f);
+
     void register_grabbers_for_picking();
     void unregister_grabbers_for_picking();
     virtual void on_register_raycasters_for_picking() {}
@@ -223,6 +228,7 @@ protected:
     void render_grabbers(const BoundingBoxf3& box) const;
     void render_grabbers(float size) const;
     void render_grabbers(size_t first, size_t last, float size, bool force_hover) const;
+    float last_input_window_width = 0;
 
     std::string format(float value, unsigned int decimals) const;
 

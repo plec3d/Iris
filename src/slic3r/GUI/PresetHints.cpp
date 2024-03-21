@@ -287,7 +287,7 @@ std::string PresetHints::top_bottom_shell_thickness_explanation(const PresetBund
         out += (boost::format(_u8L("Top shell is %1% mm thick for layer height %2% mm.")) % top_shell_thickness % layer_height).str();
         if (variable_layer_height && top_shell_thickness_minimum < top_shell_thickness) {
         	out += " ";
-	        out += (boost::format(_u8L("Minimum top shell thickness is %1% mm.")) % top_shell_thickness_minimum).str();        	
+	        out += (boost::format(_u8L("Minimum top shell thickness is %1% mm.")) % top_shell_thickness_minimum).str();
         }
     } else
         out += _u8L("Top is open.");
@@ -306,7 +306,7 @@ std::string PresetHints::top_bottom_shell_thickness_explanation(const PresetBund
         out += (boost::format(_u8L("Bottom shell is %1% mm thick for layer height %2% mm.")) % bottom_shell_thickness % layer_height).str();
         if (variable_layer_height && bottom_shell_thickness_minimum < bottom_shell_thickness) {
         	out += " ";
-	        out += (boost::format(_u8L("Minimum bottom shell thickness is %1% mm.")) % bottom_shell_thickness_minimum).str();        	
+	        out += (boost::format(_u8L("Minimum bottom shell thickness is %1% mm.")) % bottom_shell_thickness_minimum).str();
         }
     } else 
         out += _u8L("Bottom is open.");

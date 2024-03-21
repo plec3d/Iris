@@ -185,7 +185,7 @@ std::string Wipe::wipe(GCodeGenerator &gcodegen, bool toolchange)
                         wipe_arc(prev, p, unscaled<double>(it->radius), it->ccw()))
                         break;
                     prev = p;
-                }
+                }return gcode;
             }
         }
         if (wiped) {

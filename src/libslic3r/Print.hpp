@@ -37,8 +37,6 @@
 #include "GCode/ThumbnailData.hpp"
 #include "GCode/GCodeProcessor.hpp"
 #include "MultiMaterialSegmentation.hpp"
-#include "NonplanarSurface.hpp"
-#include "NonplanarFacet.hpp"
 
 #include "libslic3r.h"
 
@@ -51,7 +49,7 @@
 
 namespace Slic3r {
 
-class GCode;
+class GCodeGenerator;
 class Layer;
 class ModelObject;
 class Print;
@@ -89,9 +87,7 @@ enum PrintStep : unsigned int {
 
 enum PrintObjectStep : unsigned int {
     posSlice, posPerimeters, posPrepareInfill,
-    posInfill, posIroning, posSupportSpotsSearch, 
-    posSupportMaterial, posNonplanarProjection, posEstimateCurledExtrusions, 
-    posCount,
+    posInfill, posIroning, posSupportSpotsSearch, posSupportMaterial, posEstimateCurledExtrusions, posCalculateOverhangingPerimeters, posCount,
 };
 
 // A PrintRegion object represents a group of volumes to print
@@ -288,8 +284,6 @@ public:
     coord_t 				     height() const         { return m_size.z(); }
     // Centering offset of the sliced mesh from the scaled and rotated mesh of the model.
     const Point& 			     center_offset() const  { return m_center_offset; }
-    // 
-    NonplanarSurfaces            nonplanar_surfaces()   { return m_nonplanar_surfaces; }
 
     bool                         has_brim() const       {
         return this->config().brim_type != btNoBrim
@@ -402,18 +396,11 @@ private:
     void generate_support_spots();
     void generate_support_material();
     void estimate_curled_extrusions();
+    void calculate_overhanging_perimeters();
 
     void slice_volumes();
-    void make_slices();
-    void lslices_were_updated();
     // Has any support (not counting the raft).
     void detect_surfaces_type();
-    void merge_nonplanar_surfaces();
-    void debug_svg_print();
-    bool check_nonplanar_collisions(NonplanarSurface &surface);
-    void project_nonplanar_surfaces();
-    void find_nonplanar_surfaces();
-    void detect_nonplanar_surfaces();
     void process_external_surfaces();
     void discover_vertical_shells();
     void bridge_over_infill();
@@ -448,44 +435,11 @@ private:
     // so that next call to make_perimeters() performs a union() before computing loops
     bool                    				m_typed_slices = false;
 
-    NonplanarSurfaces                       m_nonplanar_surfaces;
-
     std::pair<FillAdaptive::OctreePtr, FillAdaptive::OctreePtr> m_adaptive_fill_octrees;
     FillLightning::GeneratorPtr m_lightning_generator;
 };
 
-struct FakeWipeTower
-{
-    // generate fake extrusion
-    Vec2f pos;
-    float width;
-    float height;
-    float layer_height;
-    float depth;
-    std::vector<std::pair<float, float>> z_and_depth_pairs;
-    float brim_width;
-    float rotation_angle;
-    float cone_angle;
-    Vec2d plate_origin;
 
-    void set_fake_extrusion_data(const Vec2f& p, float w, float h, float lh, float d, const std::vector<std::pair<float, float>>& zad, float bd, float ra, float ca, const Vec2d& o)
-    {
-        pos = p;
-        width = w;
-        height = h;
-        layer_height = lh;
-        depth = d;
-        z_and_depth_pairs = zad;
-        brim_width = bd;
-        rotation_angle = ra;
-        cone_angle = ca;
-        plate_origin = o;
-    }
-
-    void set_pos_and_rotation(const Vec2f& p, float rotation) { pos = p; rotation_angle = rotation; }
-
-    std::vector<ExtrusionPaths> getFakeExtrusionPathsFromWipeTower() const;
-};
 
 struct WipeTowerData
 {
@@ -506,6 +460,13 @@ struct WipeTowerData
     float                                                 brim_width;
     float                                                 height;
 
+    // Data needed to generate fake extrusions for conflict checking.
+    float                                                 width;
+    float                                                 first_layer_height;
+    float                                                 cone_angle;
+    Vec2d                                                 position;
+    float                                                 rotation_angle;
+
     void clear() {
         priming.reset(nullptr);
         tool_changes.clear();
@@ -514,6 +475,11 @@ struct WipeTowerData
         number_of_toolchanges = -1;
         depth = 0.f;
         brim_width = 0.f;
+        width = 0.f;
+        first_layer_height = 0.f;
+        cone_angle = 0.f;
+        position = Vec2d::Zero();
+        rotation_angle = 0.f;
     }
 
 private:
@@ -533,10 +499,6 @@ struct PrintStatistics
     double                          total_used_filament;
     double                          total_extruded_volume;
     double                          total_cost;
-    std::vector<double>             individual_extruded_volume;
-    std::vector<double>             individual_used_filament;
-    std::vector<double>             individual_weight;
-    std::vector<double>             individual_cost;
     int                             total_toolchanges;
     double                          total_weight;
     double                          total_wipe_tower_cost;
@@ -558,10 +520,6 @@ struct PrintStatistics
         total_used_filament    = 0.;
         total_extruded_volume  = 0.;
         total_cost             = 0.;
-        individual_extruded_volume.clear();
-        individual_used_filament.clear();
-        individual_weight.clear();
-        individual_cost.clear();
         total_toolchanges      = 0;
         total_weight           = 0.;
         total_wipe_tower_cost  = 0.;
@@ -572,6 +530,21 @@ struct PrintStatistics
         filament_stats.clear();
         printing_extruders.clear();
     }
+
+    static const std::string FilamentUsedG;
+    static const std::string FilamentUsedGMask;
+    static const std::string TotalFilamentUsedG;
+    static const std::string TotalFilamentUsedGMask;
+    static const std::string TotalFilamentUsedGValueMask;
+    static const std::string FilamentUsedCm3;
+    static const std::string FilamentUsedCm3Mask;
+    static const std::string FilamentUsedMm;
+    static const std::string FilamentUsedMmMask;
+    static const std::string FilamentCost;
+    static const std::string FilamentCostMask;
+    static const std::string TotalFilamentCost;
+    static const std::string TotalFilamentCostMask;
+    static const std::string TotalFilamentCostValueMask;
 };
 
 using PrintObjectPtrs          = std::vector<PrintObject*>;
@@ -741,14 +714,13 @@ private:
     Polygons m_sequential_print_clearance_contours;
 
     // To allow GCode to set the Print's GCodeExport step status.
-    friend class GCode;
+    friend class GCodeGenerator;
     // To allow GCodeProcessor to emit warnings.
     friend class GCodeProcessor;
     // Allow PrintObject to access m_mutex and m_cancel_callback.
     friend class PrintObject;
 
     ConflictResultOpt m_conflict_result;
-    FakeWipeTower     m_fake_wipe_tower;
 };
 
 } /* slic3r_Print_hpp_ */

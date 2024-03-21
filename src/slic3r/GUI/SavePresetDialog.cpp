@@ -91,7 +91,7 @@ void SavePresetDialog::Item::init_input_name_ctrl(wxBoxSizer *input_name_sizer, 
 
 static std::map<Preset::Type, std::string> TOP_LABELS =
 {
-    // type                             Save settings    
+    // type                             Save settings
     { Preset::Type::TYPE_PRINT,         L("Save print settings as")   },
     { Preset::Type::TYPE_SLA_PRINT,     L("Save print settings as")   },
     { Preset::Type::TYPE_FILAMENT,      L("Save filament settings as")},
@@ -290,7 +290,7 @@ void SavePresetDialog::Item::Enable(bool enable /*= true*/)
 //-----------------------------------------------
 
 SavePresetDialog::SavePresetDialog(wxWindow* parent, std::vector<Preset::Type> types, std::string suffix, bool template_filament/* =false*/, PresetBundle* preset_bundle/* = nullptr*/)
-    : DPIDialog(parent, wxID_ANY, types.size() == 1 ? _L("Save preset") : _L("Save presets"), 
+    : DPIDialog(parent, wxID_ANY, types.size() == 1 ? _L("Save preset") : _L("Save presets"),
                 wxDefaultPosition, wxSize(45 * wxGetApp().em_unit(), 5 * wxGetApp().em_unit()), wxDEFAULT_DIALOG_STYLE | wxICON_WARNING),
     m_preset_bundle(preset_bundle)
 {
@@ -515,8 +515,18 @@ void SavePresetDialog::accept()
 {
     for (Item* item : m_items) {
         item->accept();
-        if (item->type() == Preset::TYPE_PRINTER)
+        if (item->type() == Preset::TYPE_PRINTER){
+            // remove virtual extruders from config
+            if(wxGetApp().has_mixing_extruders()){
+                TabPrinter* tab_print = static_cast<TabPrinter*>(wxGetApp().get_tab(Preset::TYPE_PRINTER));
+                tab_print->extruders_count_changed(1);
+                //tab_print->init_options_list(); // m_options_list should be updated before UI updating
+                tab_print->update_dirty();
+                wxGetApp().plater()->remove_all_virtual_extruders();
+                wxGetApp().plater()->set_extruder_count(1);
+            }
             update_physical_printers(item->preset_name());
+        }
     }
 
     EndModal(wxID_OK);

@@ -46,32 +46,12 @@ if (SLIC3R_GUI)
             set(wxWidgets_USE_STATIC OFF)
         endif()
     endif()
-
+    set(wxWidgets_LIBRARIES "/home/plec/Iris/deps/build/destdir/usr/local/lib")
+    #set(wxWidgets_ROOT_DIR "/home/plec/wxWidgets-3.2.4/")
     if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
         set (wxWidgets_CONFIG_OPTIONS "--toolkit=gtk${SLIC3R_GTK}")
-        if (SLIC3R_WX_STABLE)
-            find_package(wxWidgets 3.0 REQUIRED COMPONENTS base core adv html gl)
-        else ()
-            find_package(wxWidgets 3.1 QUIET COMPONENTS base core adv html gl)
-
-            if (NOT wxWidgets_FOUND)
-                message(FATAL_ERROR "\nCould not find wxWidgets 3.1.\n"
-                    "Hint: On Linux you can set -DSLIC3R_WX_STABLE=1 to use wxWidgets 3.0\n")
-            endif ()
-        endif ()
-
-        include(${wxWidgets_USE_FILE})
-    else ()
-        find_package(wxWidgets 3.1 COMPONENTS html adv gl core base)
-        if (NOT wxWidgets_FOUND)
-            message(STATUS "Trying to find wxWidgets in CONFIG mode...")
-            find_package(wxWidgets 3.2 CONFIG REQUIRED COMPONENTS html adv gl core base)
-            slic3r_remap_configs(wx::wxhtml wx::wxadv wx::wxgl wx::wxcore wx::wxbase RelWithDebInfo Release)
-        else ()
-            include(${wxWidgets_USE_FILE})
-        endif ()
     endif ()
-    #find_package(wxWidgets 3.2 MODULE REQUIRED COMPONENTS base core adv html gl)
+    find_package(wxWidgets 3.2 MODULE REQUIRED COMPONENTS base core adv html gl)
 
     include(${wxWidgets_USE_FILE})
 
@@ -136,6 +116,20 @@ configure_file(${CMAKE_CURRENT_SOURCE_DIR}/platform/msw/PrusaSlicer.rc.in ${CMAK
 configure_file(${CMAKE_CURRENT_SOURCE_DIR}/platform/msw/PrusaSlicer-gcodeviewer.rc.in ${CMAKE_CURRENT_BINARY_DIR}/PrusaSlicer-gcodeviewer.rc @ONLY)
 configure_file(${CMAKE_CURRENT_SOURCE_DIR}/platform/msw/PrusaSlicer.manifest.in ${CMAKE_CURRENT_BINARY_DIR}/PrusaSlicer.manifest @ONLY)
 configure_file(${CMAKE_CURRENT_SOURCE_DIR}/platform/osx/Info.plist.in ${CMAKE_CURRENT_BINARY_DIR}/Info.plist @ONLY)
+if (WIN32)
+    configure_file(${CMAKE_CURRENT_SOURCE_DIR}/platform/msw/Slic3r.rc.in ${CMAKE_CURRENT_BINARY_DIR}/${SLIC3R_APP_KEY}.rc @ONLY)
+    configure_file(${CMAKE_CURRENT_SOURCE_DIR}/platform/msw/gcodeviewer.rc.in ${CMAKE_CURRENT_BINARY_DIR}/${SLIC3R_APP_KEY}-gcodeviewer.rc @ONLY)
+    configure_file(${CMAKE_CURRENT_SOURCE_DIR}/platform/msw/PrusaSlicer.manifest.in ${CMAKE_CURRENT_BINARY_DIR}/${SLIC3R_APP_KEY}.manifest @ONLY)
+endif ()
+if (APPLE)
+    configure_file(${CMAKE_CURRENT_SOURCE_DIR}/platform/osx/Info.plist.in ${CMAKE_CURRENT_BINARY_DIR}/Info.plist @ONLY)
+    configure_file(${CMAKE_CURRENT_SOURCE_DIR}/platform/osx/BuildMacOSImage.sh.in ${CMAKE_CURRENT_BINARY_DIR}/BuildMacOSImage.sh @ONLY)
+endif ()
+if (NOT WIN32 AND NOT APPLE)
+    configure_file(${CMAKE_CURRENT_SOURCE_DIR}/platform/unix/BuildLinuxImage.sh.in ${CMAKE_CURRENT_BINARY_DIR}/BuildLinuxImage.sh @ONLY)
+    configure_file(${CMAKE_CURRENT_SOURCE_DIR}/platform/unix/build_appimage.sh.in ${CMAKE_CURRENT_BINARY_DIR}/build_appimage.sh @ONLY)
+endif ()
+
 if (WIN32)
     add_library(PrusaSlicer SHARED PrusaSlicer.cpp PrusaSlicer.hpp)
 else ()
@@ -259,15 +253,15 @@ else ()
     if (APPLE)
         # On OSX, the name of the binary matches the name of the Application.
         add_custom_command(TARGET PrusaSlicer POST_BUILD
-            COMMAND ln -sf PrusaSlicer prusa-slicer
-            COMMAND ln -sf PrusaSlicer prusa-gcodeviewer
+            COMMAND ln -sf PrusaSlicer pleccer
+            COMMAND ln -sf PrusaSlicer pleccer-gcodeviewer
             COMMAND ln -sf PrusaSlicer PrusaGCodeViewer
             WORKING_DIRECTORY "$<TARGET_FILE_DIR:PrusaSlicer>"
             COMMENT "Symlinking the G-code viewer to PrusaSlicer, symlinking to prusa-slicer and prusa-gcodeviewer"
             VERBATIM)
     else ()
         add_custom_command(TARGET PrusaSlicer POST_BUILD
-            COMMAND ln -sf prusa-slicer prusa-gcodeviewer
+            COMMAND ln -sf pleccer pleccer-gcodeviewer
             WORKING_DIRECTORY "$<TARGET_FILE_DIR:PrusaSlicer>"
             COMMENT "Symlinking the G-code viewer to PrusaSlicer"
             VERBATIM)

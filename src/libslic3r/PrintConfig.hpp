@@ -47,6 +47,11 @@
 
 namespace Slic3r {
 
+enum class ArcFittingType {
+    Disabled,
+    EmitCenter
+};
+
 enum GCodeFlavor : unsigned char {
     gcfRepRapSprinter, gcfRepRapFirmware, gcfRepetier, gcfTeacup, gcfMakerWare, gcfMarlinLegacy, gcfMarlinFirmware, gcfKlipper, gcfSailfish, gcfMach3, gcfMachinekit,
     gcfSmoothie, gcfNoExtrusion,
@@ -70,7 +75,6 @@ enum AuthorizationType {
 enum OverhangSetting {
  osInactive, osOrganic1, osOrganic2, osOrganic3, osClassic1, osClassic2, osClassic3
 };
-
 enum class FuzzySkinType {
     None,
     External,
@@ -78,11 +82,12 @@ enum class FuzzySkinType {
 };
 
 enum InfillPattern : int {
-    ipArc, ipSpiral, ipRectilinear, ipMonotonic, ipMonotonicLines, ipAlignedRectilinear, ipGrid, ipTriangles, ipStars, ipCubic, ipLine, ipConcentric, ipAlterCentric, ipHoneycomb, ip3DHoneycomb,
+    ipRectilinear, ipMonotonic, ipMonotonicLines, ipAlignedRectilinear, ipGrid, ipTriangles, ipStars, ipCubic, ipLine, ipConcentric, ipHoneycomb, ip3DHoneycomb,
     ipGyroid, ipHilbertCurve, ipArchimedeanChords, ipOctagramSpiral, ipAdaptiveCubic, ipSupportCubic, ipSupportBase,
     ipLightning,
     ipEnsuring,
-    ipCount,
+    ipArc,
+    ipCount
 };
 
 enum class IroningType {
@@ -145,6 +150,10 @@ enum DraftShield {
     dsDisabled, dsLimited, dsEnabled
 };
 
+enum class LabelObjectsStyle {
+    Disabled, Octoprint, Firmware
+};
+
 enum class PerimeterGeneratorType
 {
     // Classic perimeter generator using Clipper offsets with constant extrusion width.
@@ -162,6 +171,7 @@ enum class GCodeThumbnailsFormat {
     template<> const t_config_enum_names& ConfigOptionEnum<NAME>::get_enum_names(); \
     template<> const t_config_enum_values& ConfigOptionEnum<NAME>::get_enum_values();
 
+CONFIG_OPTION_ENUM_DECLARE_STATIC_MAPS(ArcFittingType)
 CONFIG_OPTION_ENUM_DECLARE_STATIC_MAPS(PrinterTechnology)
 CONFIG_OPTION_ENUM_DECLARE_STATIC_MAPS(GCodeFlavor)
 CONFIG_OPTION_ENUM_DECLARE_STATIC_MAPS(MachineLimitsUsage)
@@ -180,6 +190,7 @@ CONFIG_OPTION_ENUM_DECLARE_STATIC_MAPS(SLAPillarConnectionMode)
 CONFIG_OPTION_ENUM_DECLARE_STATIC_MAPS(SLASupportTreeType)
 CONFIG_OPTION_ENUM_DECLARE_STATIC_MAPS(BrimType)
 CONFIG_OPTION_ENUM_DECLARE_STATIC_MAPS(DraftShield)
+CONFIG_OPTION_ENUM_DECLARE_STATIC_MAPS(LabelObjectsStyle)
 CONFIG_OPTION_ENUM_DECLARE_STATIC_MAPS(GCodeThumbnailsFormat)
 CONFIG_OPTION_ENUM_DECLARE_STATIC_MAPS(ForwardCompatibilitySubstitutionRule)
 CONFIG_OPTION_ENUM_DECLARE_STATIC_MAPS(PerimeterGeneratorType)
@@ -277,7 +288,6 @@ public:
     int                 id_like_this_virtual_extruder(std::string& color, int extruder_id, int num_extruders, bool noNew = false);
     bool                store_mixing_color(std::string color, int extruder_id, int to_delete = -1);
     void                remove_all_virtual_extruders();
-
     // Validate the PrintConfig. Returns an empty string on success, otherwise an error message is returned.
     std::string         validate();
 
@@ -525,13 +535,19 @@ PRINT_CONFIG_CLASS_DEFINE(
     ((ConfigOptionEnum<BrimType>,      brim_type))
     ((ConfigOptionFloat,               brim_width))
     ((ConfigOptionFloat,               overhang_overlap))
+    ((ConfigOptionBool,                first_internal_on_overhangs))
+    //((ConfigOptionBool,                clip_multipart_objects))    
     ((ConfigOptionBool,                 has_nonplanar_layers))
     ((ConfigOptionEnum<OverhangSetting>, overhang_primary_setting))
     ((ConfigOptionEnum<OverhangSetting>, overhang_secondary_setting))
     ((ConfigOptionEnum<OverhangSetting>, overhang_hole_setting))
     ((ConfigOptionBool,                 use_nonplanar_layers))
-    ((ConfigOptionBool,                ignore_overhang_auto_setting))
-    ((ConfigOptionFloat,               overhang_margin))
+    // Nonplanar settings
+    ((ConfigOptionFloat,                nonplanar_layers_angle))
+    ((ConfigOptionBool,                 ignore_overhang_auto_setting))
+    ((ConfigOptionBool,                 has_mixing_colors))
+    ((ConfigOptionBool,                 auto_fill_mixing_colors))
+    ((ConfigOptionFloat,                overhang_margin))
     ((ConfigOptionBool,                dont_support_bridges))
     ((ConfigOptionFloat,               elefant_foot_compensation))
     ((ConfigOptionFloatOrPercent,      extrusion_width))
@@ -564,12 +580,9 @@ PRINT_CONFIG_CLASS_DEFINE(
     ((ConfigOptionBool,                support_material))
     // Automatic supports (generated based fdm support point generator).
     ((ConfigOptionBool,                support_material_auto))
-    ((ConfigOptionFloat,               bottom_layer_flow_ratio))
-    ((ConfigOptionFloat,               top_layer_flow_ratio))
-    ((ConfigOptionFloat,                top_fill_angle))
-    ((ConfigOptionFloat,                bottom_fill_angle))
     // Direction of the support pattern (in XY plane).`
     ((ConfigOptionFloat,               support_material_angle))
+    ((ConfigOptionBool,                dont_support_pedestal_overhangs))
     ((ConfigOptionBool,                support_material_buildplate_only))
     ((ConfigOptionFloat,               support_material_contact_distance))
     ((ConfigOptionFloat,               support_material_bottom_contact_distance))
@@ -615,17 +628,21 @@ PRINT_CONFIG_CLASS_DEFINE(
     PrintRegionConfig,
 
     ((ConfigOptionFloat,                bridge_angle))
+    ((ConfigOptionFloat,                bds_ratio_length))
+    ((ConfigOptionFloat,                bds_ratio_nr))
+    ((ConfigOptionFloat,                bds_median_length))
+    ((ConfigOptionFloat,                bds_max_length))
+    ((ConfigOptionFloat,                arc_radius))
+    ((ConfigOptionFloat,                arc_infill_raylen))
     ((ConfigOptionInt,                  bottom_solid_layers))
     ((ConfigOptionFloat,                bottom_solid_min_thickness))
     ((ConfigOptionFloat,                bridge_flow_ratio))
     ((ConfigOptionFloat,                bridge_speed))
-    ((ConfigOptionFloat,                arc_radius))
-    ((ConfigOptionFloat,                arc_infill_raylen))
+    ((ConfigOptionFloat,                overhang_speed))
     ((ConfigOptionEnum<InfillPattern>,  top_fill_pattern))
-    ((ConfigOptionEnum<InfillPattern>,  bottom_fill_pattern))
     ((ConfigOptionEnum<InfillPattern>,  bridge_fill_pattern))
     ((ConfigOptionEnum<InfillPattern>,  overhang_fill_pattern))
-    ((ConfigOptionEnum<InfillPattern>,  pedestal_fill_pattern))
+    ((ConfigOptionEnum<InfillPattern>,  bottom_fill_pattern))
     ((ConfigOptionFloatOrPercent,       external_perimeter_extrusion_width))
     ((ConfigOptionFloatOrPercent,       external_perimeter_speed))
     ((ConfigOptionBool,                 enable_dynamic_overhang_speeds))
@@ -644,8 +661,6 @@ PRINT_CONFIG_CLASS_DEFINE(
     ((ConfigOptionFloat,                fuzzy_skin_point_dist))
     ((ConfigOptionBool,                 gap_fill_enabled))
     ((ConfigOptionFloat,                gap_fill_speed))
-    ((ConfigOptionBool,                 infill_first))
-    ((ConfigOptionBool,                 first_internal_on_overhangs))
     ((ConfigOptionFloatOrPercent,       infill_anchor))
     ((ConfigOptionFloatOrPercent,       infill_anchor_max))
     ((ConfigOptionInt,                  infill_extruder))
@@ -653,9 +668,6 @@ PRINT_CONFIG_CLASS_DEFINE(
     ((ConfigOptionInt,                  infill_every_layers))
     ((ConfigOptionFloatOrPercent,       infill_overlap))
     ((ConfigOptionFloat,                infill_speed))
-    // Nonplanar settings
-    ((ConfigOptionFloat,                nonplanar_layers_angle))
-    ((ConfigOptionFloat,                nonplanar_layers_height))
     // Ironing options
     ((ConfigOptionBool,                 ironing))
     ((ConfigOptionEnum<IroningType>,    ironing_type))
@@ -664,14 +676,12 @@ PRINT_CONFIG_CLASS_DEFINE(
     ((ConfigOptionFloat,                ironing_speed))
     // Detect bridging perimeters
     ((ConfigOptionBool,                 overhangs))
-    ((ConfigOptionBool,                 overhangs_threshold))
     ((ConfigOptionInt,                  perimeter_extruder))
     ((ConfigOptionFloatOrPercent,       perimeter_extrusion_width))
     ((ConfigOptionFloat,                perimeter_speed))
     // Total number of perimeters.
     ((ConfigOptionInt,                  perimeters))
     ((ConfigOptionFloatOrPercent,       small_perimeter_speed))
-    ((ConfigOptionEnum<InfillPattern>,  solid_fill_pattern))
     ((ConfigOptionFloat,                solid_infill_below_area))
     ((ConfigOptionInt,                  solid_infill_extruder))
     ((ConfigOptionFloatOrPercent,       solid_infill_extrusion_width))
@@ -721,6 +731,7 @@ PRINT_CONFIG_CLASS_DEFINE(
 PRINT_CONFIG_CLASS_DEFINE(
     GCodeConfig,
 
+    ((ConfigOptionEnum<ArcFittingType>, arc_fitting))
     ((ConfigOptionBool,                autoemit_temperature_commands))
     ((ConfigOptionString,              before_layer_gcode))
     ((ConfigOptionString,              between_objects_gcode))
@@ -753,13 +764,14 @@ PRINT_CONFIG_CLASS_DEFINE(
     ((ConfigOptionFloats,              filament_multitool_ramming_flow))
     ((ConfigOptionBool,                gcode_comments))
     ((ConfigOptionEnum<GCodeFlavor>,   gcode_flavor))
-    ((ConfigOptionBool,                gcode_label_objects))
+    ((ConfigOptionEnum<LabelObjectsStyle>,  gcode_label_objects))
     // Triples of strings: "search pattern", "replace with pattern", "attribs"
     // where "attribs" are one of:
     //      r - regular expression
     //      i - case insensitive
     //      w - whole word
     ((ConfigOptionStrings,             gcode_substitutions))
+    ((ConfigOptionBool,                gcode_binary))
     ((ConfigOptionString,              layer_gcode))
     ((ConfigOptionFloat,               max_print_speed))
     ((ConfigOptionFloat,               max_volumetric_speed))
@@ -822,7 +834,6 @@ PRINT_CONFIG_CLASS_DERIVED_DEFINE(
     ((ConfigOptionInts,               overhang_fan_speed_2))
     ((ConfigOptionInts,               overhang_fan_speed_3))
     ((ConfigOptionBool,               complete_objects))
-    ((ConfigOptionBool,               parallel_objects))
     ((ConfigOptionFloats,             colorprint_heights))
     ((ConfigOptionBools,              cooling))
     ((ConfigOptionFloat,              default_acceleration))
@@ -832,16 +843,21 @@ PRINT_CONFIG_CLASS_DERIVED_DEFINE(
     ((ConfigOptionFloat,              external_perimeter_acceleration))
     ((ConfigOptionFloat,              extruder_clearance_height))
     ((ConfigOptionFloat,              extruder_clearance_radius))
+    ((ConfigOptionStrings,            extruder_colour))
+    ((ConfigOptionPoints,             extruder_offset))
     ((ConfigOptionInts,               virtual_extruder))
     ((ConfigOptionBools,              mixing_extruder))
     ((ConfigOptionBools,              nonmixing_extruder))
-    ((ConfigOptionStrings,            extruder_colour))
     ((ConfigOptionInts,               multi_extruder_colors))
     ((ConfigOptionStrings,            multi_extruder_color1))
     ((ConfigOptionStrings,            multi_extruder_color2))
     ((ConfigOptionStrings,            multi_extruder_color3))
     ((ConfigOptionStrings,            multi_extruder_color4))
-    ((ConfigOptionPoints,             extruder_offset))
+    ((ConfigOptionStrings,            multi_extruder_color5))
+    ((ConfigOptionStrings,            multi_extruder_color6))
+    ((ConfigOptionStrings,            multi_extruder_color7))
+    ((ConfigOptionStrings,            multi_extruder_color8))
+    ((ConfigOptionStrings,            stored_mixing_colors))
     ((ConfigOptionBools,              fan_always_on))
     ((ConfigOptionInts,               fan_below_layer_time))
     ((ConfigOptionStrings,            filament_colour))
@@ -855,7 +871,8 @@ PRINT_CONFIG_CLASS_DERIVED_DEFINE(
     ((ConfigOptionIntsNullable,       idle_temperature))
     ((ConfigOptionInts,               full_fan_speed_layer))
     ((ConfigOptionFloat,              infill_acceleration))
-    //((ConfigOptionBool,               infill_first))
+    ((ConfigOptionBool,               infill_first))
+    ((ConfigOptionBool,               overhang_infill_first))
     ((ConfigOptionInts,               max_fan_speed))
     ((ConfigOptionFloats,             max_layer_height))
     ((ConfigOptionInts,               min_fan_speed))
@@ -885,14 +902,13 @@ PRINT_CONFIG_CLASS_DERIVED_DEFINE(
     ((ConfigOptionInt,                standby_temperature_delta))
     ((ConfigOptionInts,               temperature))
     ((ConfigOptionInt,                threads))
-    ((ConfigOptionPoints,             thumbnails))
+    ((ConfigOptionString,             thumbnails))
     ((ConfigOptionEnum<GCodeThumbnailsFormat>,  thumbnails_format))
     ((ConfigOptionFloat,              top_solid_infill_acceleration))
     ((ConfigOptionFloat,              travel_acceleration))
     ((ConfigOptionBools,              wipe))
     ((ConfigOptionBool,               wipe_tower))
-    ((ConfigOptionFloat,              wipe_tower_speed))
-    ((ConfigOptionFloat,              wipe_tower_wipe_starting_speed))
+    ((ConfigOptionBool,               wipe_tower_hidden))
     ((ConfigOptionFloat,              wipe_tower_x))
     ((ConfigOptionFloat,              wipe_tower_y))
     ((ConfigOptionFloat,              wipe_tower_width))
@@ -1223,6 +1239,68 @@ class CLIMiscConfigDef : public ConfigDef
 public:
     CLIMiscConfigDef();
 };
+
+typedef std::string t_custom_gcode_key;
+// This map containes list of specific placeholders for each custom G-code, if any exist
+const std::map<t_custom_gcode_key, t_config_option_keys>& custom_gcode_specific_placeholders();
+
+// Next classes define placeholders used by GUI::EditGCodeDialog.
+
+class ReadOnlySlicingStatesConfigDef : public ConfigDef
+{
+public:
+    ReadOnlySlicingStatesConfigDef();
+};
+
+class ReadWriteSlicingStatesConfigDef : public ConfigDef
+{
+public:
+    ReadWriteSlicingStatesConfigDef();
+};
+
+class OtherSlicingStatesConfigDef : public ConfigDef
+{
+public:
+    OtherSlicingStatesConfigDef();
+};
+
+class PrintStatisticsConfigDef : public ConfigDef
+{
+public:
+    PrintStatisticsConfigDef();
+};
+
+class ObjectsInfoConfigDef : public ConfigDef
+{
+public:
+    ObjectsInfoConfigDef();
+};
+
+class DimensionsConfigDef : public ConfigDef
+{
+public:
+    DimensionsConfigDef();
+};
+
+class TimestampsConfigDef : public ConfigDef
+{
+public:
+    TimestampsConfigDef();
+};
+
+class OtherPresetsConfigDef : public ConfigDef
+{
+public:
+    OtherPresetsConfigDef();
+};
+
+// This classes defines all custom G-code specific placeholders.
+class CustomGcodeSpecificConfigDef : public ConfigDef
+{
+public:
+    CustomGcodeSpecificConfigDef();
+};
+extern const CustomGcodeSpecificConfigDef    custom_gcode_specific_config_def;
 
 // This class defines the command line options representing actions.
 extern const CLIActionsConfigDef    cli_actions_config_def;
