@@ -280,6 +280,21 @@ struct PresetConfigSubstitutions {
     ConfigSubstitutions                     substitutions;
 };
 
+// This struct is used to get an information about loaded external preset
+struct ExternalPreset
+{
+    Preset* preset          { nullptr };
+    bool    is_modified     { false };
+    bool    is_installed    { false };
+
+    ExternalPreset(Preset* preset, bool modified, bool installed = false)
+    : preset(preset)
+    , is_modified(modified)
+    , is_installed(installed) {}
+
+    virtual ~ExternalPreset() = default;
+};
+
 // Substitutions having been performed during parsing a set of configuration files, for example when starting up
 // PrusaSlicer and reading the user Print / Filament / Printer profiles.
 using PresetsConfigSubstitutions = std::vector<PresetConfigSubstitutions>;
@@ -320,7 +335,9 @@ public:
     Preset&         load_preset(const std::string &path, const std::string &name, const DynamicPrintConfig &config, bool select = true);
     Preset&         load_preset(const std::string &path, const std::string &name, DynamicPrintConfig &&config, bool select = true);
 
-    // Returns a loaded preset, returns true if an existing preset was selected AND modified from config.
+    // Returns a loaded preset,
+    // returns is_modified as true if an existing preset was selected AND modified from config,
+    // returns is_installed as true if a preset was selected AND set as visible during selection.
     // In that case the successive filament loaded for a multi material printer should not be modified, but
     // an external preset should be created instead.
     enum class LoadAndSelect {
@@ -331,7 +348,7 @@ public:
         // Select a profile only if it was modified.
         OnlyIfModified,
     };
-    std::pair<Preset*, bool> load_external_preset(
+    ExternalPreset load_external_preset(
         // Path to the profile source file (a G-code, an AMF or 3MF file, a config file)
         const std::string           &path,
         // Name of the profile, derived from the source file name.
@@ -633,7 +650,7 @@ namespace PresetUtils {
     bool        compare_vendor_profile_printers(const VendorProfile& vp_old, const VendorProfile& vp_new, std::vector<std::string>& new_printers);
 } // namespace PresetUtils
 
-
+ 
 //////////////////////////////////////////////////////////////////////
 
 class PhysicalPrinter
@@ -712,7 +729,7 @@ protected:
 class PhysicalPrinterCollection
 {
 public:
-    PhysicalPrinterCollection(const std::vector<std::string>& keys);
+    PhysicalPrinterCollection(const std::vector<std::string>& keys, PresetBundle* preset_bundle);
 
     typedef std::deque<PhysicalPrinter>::iterator Iterator;
     typedef std::deque<PhysicalPrinter>::const_iterator ConstIterator;
@@ -833,6 +850,8 @@ private:
 
     // Path to the directory to store the config files into.
     std::string                 m_dir_path;
+
+    const PresetBundle*         m_preset_bundle_owner{ nullptr };
 };
 
 

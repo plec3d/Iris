@@ -475,6 +475,30 @@ std::vector<wxBitmapBundle*> MenuFactory::get_svg_volume_bitmaps()
     return volume_bmps;
 }
 
+wxString MenuFactory::get_repaire_result_message(
+    const std::vector<std::string>& succes_models,
+    const std::vector<std::pair<std::string, std::string>>& failed_models)
+{
+    // Show info notification
+    wxString msg;
+    wxString bullet_suf = "\n   - ";
+    if (!succes_models.empty()) {
+        msg = _L_PLURAL("The following model was repaired successfully", "The following models were repaired successfully", succes_models.size()) + ":";
+        for (auto& model : succes_models)
+            msg += bullet_suf + from_u8(model);
+        msg += "\n\n";
+    }
+    if (!failed_models.empty()) {
+        msg += _L_PLURAL("Folowing model repair failed", "Folowing models repair failed", failed_models.size()) + ":\n";
+        for (auto& model : failed_models)
+            msg += bullet_suf + from_u8(model.first) + ": " + _(model.second);
+    }
+    if (msg.IsEmpty())
+        msg = _L("Repairing was canceled");
+
+    return msg;
+}
+
 void MenuFactory::append_menu_item_delete(wxMenu* menu)
 {
     append_menu_item(menu, wxID_ANY, _L("Delete") + "\tDel", _L("Remove the selected object"),
@@ -548,7 +572,7 @@ static void append_menu_itemm_add_(const wxString& name, GLGizmosManager::EType 
             } else {
                 svg->create_volume(volume_type);
             }
-        }
+        }        
     };
 
     if (type == ModelVolumeType::MODEL_PART || type == ModelVolumeType::NEGATIVE_VOLUME || type == ModelVolumeType::PARAMETER_MODIFIER ||
@@ -1022,7 +1046,7 @@ void MenuFactory::append_menu_item_edit_text(wxMenu *menu)
 
     auto can_edit_text = []() {
         if (plater() == nullptr)
-            return false;
+            return false;        
         const Selection& selection = plater()->get_selection();
         if (selection.volumes_count() != 1)
             return false;
@@ -1032,7 +1056,7 @@ void MenuFactory::append_menu_item_edit_text(wxMenu *menu)
         const ModelVolume *volume = get_model_volume(*gl_volume, selection.get_model()->objects);
         if (volume == nullptr)
             return false;
-        return volume->is_text();
+        return volume->is_text();        
     };
 
     if (menu != &m_text_part_menu) {
@@ -1059,7 +1083,7 @@ void MenuFactory::append_menu_item_edit_svg(wxMenu *menu)
     wxString name = _L("Edit SVG");
     auto can_edit_svg = []() {
         if (plater() == nullptr)
-            return false;
+            return false;        
         const Selection& selection = plater()->get_selection();
         if (selection.volumes_count() != 1)
             return false;
@@ -1069,7 +1093,7 @@ void MenuFactory::append_menu_item_edit_svg(wxMenu *menu)
         const ModelVolume *volume = get_model_volume(*gl_volume, selection.get_model()->objects);
         if (volume == nullptr)
             return false;
-        return volume->is_svg();
+        return volume->is_svg();        
     };
 
     if (menu != &m_svg_part_menu) {

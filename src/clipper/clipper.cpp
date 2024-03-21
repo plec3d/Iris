@@ -366,7 +366,7 @@ void IntersectPoint(TEdge &Edge1, TEdge &Edge2, IntPoint &ip)
     ip.x() = TopX(Edge1, ip.y());
     return;
   }
-
+ 
   int64_t y;
   if (Edge1.Delta.x() == 0)
   {
@@ -374,12 +374,12 @@ void IntersectPoint(TEdge &Edge1, TEdge &Edge2, IntPoint &ip)
     y = IsHorizontal(Edge2) ?
       Edge2.Bot.y() :
       Round<int64_t>(ip.x() / Edge2.Dx + Edge2.Bot.y() - (Edge2.Bot.x() / Edge2.Dx));
-
+      
   }
   else if (Edge2.Delta.x() == 0)
   {
     ip.x() = Edge2.Bot.x();
-    y = IsHorizontal(Edge1) ?
+    y = IsHorizontal(Edge1) ? 
       Edge1.Bot.y() :
       Round<int64_t>(ip.x() / Edge1.Dx + Edge1.Bot.y() - (Edge1.Bot.x() / Edge1.Dx));
   }
@@ -2819,12 +2819,12 @@ void Clipper::BuildResult2(PolyTree& polytree)
     for (OutRec &outRec : m_PolyOuts)
     {
         if (!outRec.PolyNd) continue;
-        if (outRec.IsOpen)
+        if (outRec.IsOpen) 
         {
           outRec.PolyNd->m_IsOpen = true;
           polytree.AddChild(*outRec.PolyNd);
         }
-        else if (outRec.FirstLeft && outRec.FirstLeft->PolyNd)
+        else if (outRec.FirstLeft && outRec.FirstLeft->PolyNd) 
           outRec.FirstLeft->PolyNd->AddChild(*outRec.PolyNd);
         else
           polytree.AddChild(*outRec.PolyNd);
@@ -3757,7 +3757,7 @@ void Clipper::DoSimplePolygons()
     do //for each Pt in Polygon until duplicate found do ...
     {
       OutPt* op2 = op->Next;
-      while (op2 != outrec.Pts)
+      while (op2 != outrec.Pts) 
       {
         if ((op->Pt == op2->Pt) && op2->Next != op && op2->Prev != op) 
         {

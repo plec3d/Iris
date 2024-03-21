@@ -495,7 +495,7 @@ static void make_inner_brim(const Print                   &print,
 
     loops = union_pt_chained_outside_in(loops);
     std::reverse(loops.begin(), loops.end());
-    extrusion_entities_append_loops(brim.entities, std::move(loops),
+    extrusion_entities_append_loops(brim.entities, std::move(loops), 
         ExtrusionAttributes{
             ExtrusionRole::Skirt,
             ExtrusionFlow{ float(flow.mm3_per_mm()), float(flow.width()), float(print.skirt_first_layer_height()) } });
@@ -680,7 +680,7 @@ ExtrusionEntityCollection make_brim(const Print &print, PrintTryCancel try_cance
 					auto *loop = new ExtrusionLoop();
                     brim.entities.emplace_back(loop);
                     loop->paths.emplace_back(ExtrusionAttributes{
-                        ExtrusionRole::Skirt,
+                        ExtrusionRole::Skirt, 
                         ExtrusionFlow{ float(flow.mm3_per_mm()), float(flow.width()), float(print.skirt_first_layer_height()) } });
 		            Points &points = loop->paths.front().polyline.points;
 		            points.reserve(first_path.size());
@@ -710,7 +710,7 @@ ExtrusionEntityCollection make_brim(const Print &print, PrintTryCancel try_cance
 			}
 		}
     } else {
-        extrusion_entities_append_loops_and_paths(brim.entities, std::move(all_loops),
+        extrusion_entities_append_loops_and_paths(brim.entities, std::move(all_loops), 
             ExtrusionAttributes{ ExtrusionRole::Skirt,
                 ExtrusionFlow{ float(flow.mm3_per_mm()), float(flow.width()), float(print.skirt_first_layer_height()) } });
     }

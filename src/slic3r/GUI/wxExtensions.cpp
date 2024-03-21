@@ -825,7 +825,7 @@ ScalableButton::ScalableButton( wxWindow *          parent,
                                 const wxSize&       size /* = wxDefaultSize*/,
                                 const wxPoint&      pos /* = wxDefaultPosition*/,
                                 long                style /*= wxBU_EXACTFIT | wxNO_BORDER*/,
-                                int                 width/* = 16*/,
+                                int                 width/* = 16*/, 
                                 int                 height/* = -1*/) :
     m_parent(parent),
     m_current_icon_name(icon_name),

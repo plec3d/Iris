@@ -134,7 +134,7 @@ public:
     std::function<void(wxWindow* win)> rescale_near_label_widget { nullptr };
 
     std::function<void(const t_config_option_key& opt_key)> edit_custom_gcode { nullptr };
-
+    
     wxFont			sidetext_font {wxSystemSettings::GetFont(wxSYS_DEFAULT_GUI_FONT) };
     wxFont			label_font {wxSystemSettings::GetFont(wxSYS_DEFAULT_GUI_FONT) };
 	int				sidetext_width{ -1 };
@@ -206,6 +206,7 @@ public:
 
     wxGridSizer*        get_grid_sizer() { return m_grid_sizer; }
 	const std::vector<Line>& get_lines() { return m_lines; }
+	Line*				get_last_line()  { return m_lines.empty() ? nullptr : &m_lines[m_lines.size()-1]; }
 	bool				is_legend_line();
 	// if we have to set the same control alignment for different option groups, 
     // we have to set same max contrtol width to all of them

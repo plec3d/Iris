@@ -71,9 +71,9 @@ class ExtrusionEntityReference final
 {
 public:
     ExtrusionEntityReference() = delete;
-    ExtrusionEntityReference(const ExtrusionEntity &extrusion_entity, bool flipped) :
+    ExtrusionEntityReference(const ExtrusionEntity &extrusion_entity, bool flipped) : 
         m_extrusion_entity(&extrusion_entity), m_flipped(flipped) {}
-    ExtrusionEntityReference operator=(const ExtrusionEntityReference &rhs)
+    ExtrusionEntityReference operator=(const ExtrusionEntityReference &rhs) 
         { m_extrusion_entity = rhs.m_extrusion_entity; m_flipped = rhs.m_flipped; return *this; }
 
     const ExtrusionEntity& extrusion_entity() const { return *m_extrusion_entity; }
@@ -91,7 +91,7 @@ using ExtrusionEntityReferences = std::vector<ExtrusionEntityReference>;
 struct ExtrusionFlow
 {
     ExtrusionFlow() = default;
-    ExtrusionFlow(double mm3_per_mm, float width, float height) :
+    ExtrusionFlow(double mm3_per_mm, float width, float height) : 
         mm3_per_mm{ mm3_per_mm }, width{ width }, height{ height } {}
     ExtrusionFlow(const Flow &flow) :
         mm3_per_mm(flow.mm3_per_mm()), width(flow.width()), height(flow.height()) {}
@@ -124,7 +124,7 @@ struct ExtrusionAttributes : ExtrusionFlow
 
     // What is the role / purpose of this extrusion?
     ExtrusionRole   role{ ExtrusionRole::None };
-    // OVerhangAttributes are currently computed for perimeters if dynamic overhangs are enabled.
+    // OVerhangAttributes are currently computed for perimeters if dynamic overhangs are enabled. 
     // They are used to control fan and print speed in export.
     std::optional<OverhangAttributes> overhang_attributes;
 };
@@ -169,7 +169,7 @@ public:
     void clip_end(double distance);
     void simplify(double tolerance);
     double length() const override;
-
+   
     const ExtrusionAttributes&  attributes() const { return m_attributes; }
     ExtrusionRole               role() const override { return m_attributes.role; }
     float                       width() const { return m_attributes.width; }

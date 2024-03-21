@@ -41,6 +41,7 @@ class DropDown : public wxPopupTransientWindow
     ScalableBitmap check_bitmap;
 
     bool pressedDown = false;
+    bool slider_grabbed = false;
     boost::posix_time::ptime dismissTime;
     wxPoint                  offset; // x not used
     wxPoint                  dragStart;
@@ -85,6 +86,8 @@ public:
     bool HasDismissLongTime();
 
     static void SetTransparentBG(wxDC& dc, wxWindow* win);
+
+    void CallDismissAndNotify() { DismissAndNotify(); }
     
 protected:
     void OnDismiss() override;

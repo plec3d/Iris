@@ -19,7 +19,6 @@
 #include "../BuildVolume.hpp"
 #include "../ClipperUtils.hpp"
 #include "../EdgeGrid.hpp"
-#include "../Fill/Fill.hpp"
 #include "../Layer.hpp"
 #include "../Print.hpp"
 #include "../MultiPoint.hpp"
@@ -81,7 +80,7 @@ static inline void validate_range(const MultiPoint &mp)
     validate_range(mp.points);
 }
 
-[[maybe_unused]] static inline void validate_range(const Polygons &polygons)
+[[maybe_unused]] static inline void validate_range(const Polygons &polygons) 
 {
     for (const Polygon &p : polygons)
         validate_range(p);

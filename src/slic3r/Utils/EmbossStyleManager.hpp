@@ -172,7 +172,7 @@ public:
     /// <param name="text">Text to render by style</param>
     void init_style_images(const Vec2i& max_size, const std::string &text);
     void free_style_images();
-
+    
     // access to all managed font styles
     const std::vector<Style> &get_styles() const;
 
@@ -211,10 +211,10 @@ public:
 
         bool operator==(const Style &other) const
         {
-            return EmbossStyle::operator==(other) &&
+            return EmbossStyle::operator==(other) && 
                 projection == other.projection &&
-                distance == other.distance &&
-                angle == other.angle;
+                is_approx(distance, other.distance) &&
+                is_approx(angle, other.angle);
         }
 
         // cache for view font name with maximal width in imgui

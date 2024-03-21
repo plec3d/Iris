@@ -23,7 +23,7 @@ Point circle_center_taubin_newton(const Points::const_iterator& input_begin, con
 
 // Robust and accurate algebraic circle fit, which works well even if data points are observed only within a small arc.
 // The method was proposed by G. Taubin in
-//      "Estimation Of Planar Curves, Surfaces And Nonplanar Space Curves Defined By Implicit Equations,
+//      "Estimation Of Planar Curves, Surfaces And Nonplanar Space Curves Defined By Implicit Equations, 
 //       With Applications To Edge And Range Image Segmentation", IEEE Trans. PAMI, Vol. 13, pages 1115-1138, (1991)."
 // This particular implementation was adapted from
 //      "Circular and Linear Regression: Fitting circles and lines by least squares", pg 126"
@@ -174,14 +174,14 @@ Circled circle_linear_least_squares_by_solver(const Vec2ds &input, Solver solver
 
 Circled circle_linear_least_squares_svd(const Vec2ds &input)
 {
-    return circle_linear_least_squares_by_solver(input,
+    return circle_linear_least_squares_by_solver(input, 
         [](const Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic /* 3 */> &A, const Eigen::VectorXd &b)
         { return A.bdcSvd(Eigen::ComputeThinU | Eigen::ComputeThinV).solve(b).eval(); });
 }
 
 Circled circle_linear_least_squares_qr(const Vec2ds &input)
 {
-    return circle_linear_least_squares_by_solver(input,
+    return circle_linear_least_squares_by_solver(input, 
         [](const Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic> &A, const Eigen::VectorXd &b)
         { return A.colPivHouseholderQr().solve(b).eval(); });
 }

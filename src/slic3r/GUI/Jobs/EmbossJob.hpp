@@ -40,7 +40,7 @@ namespace Slic3r::GUI::Emboss {
 class DataBase
 {
 public:
-    DataBase(const std::string& volume_name, std::shared_ptr<std::atomic<bool>> cancel)
+    DataBase(const std::string& volume_name, std::shared_ptr<std::atomic<bool>> cancel) 
         : volume_name(volume_name), cancel(std::move(cancel)) {}
     DataBase(const std::string& volume_name, std::shared_ptr<std::atomic<bool>> cancel, EmbossShape&& shape)
         : volume_name(volume_name), cancel(std::move(cancel)), shape(std::move(shape)){}
@@ -61,7 +61,7 @@ public:
     virtual void write(ModelVolume &volume) const;
 
     // Define projection move
-    // True (raised) .. move outside from surface (MODEL_PART)
+    // True (raised) .. move outside from surface (MODEL_PART)    
     // False (engraved).. move into object (NEGATIVE_VOLUME)
     bool is_outside = true;
 
@@ -73,7 +73,7 @@ public:
     // It is used only for flat surface (not cutted)
     // Position of Zero(not set value) differ for MODEL_PART and NEGATIVE_VOLUME
     std::optional<float> from_surface;
-
+        
     // new volume name
     std::string volume_name;
 
@@ -113,6 +113,9 @@ struct DataUpdate
 
     // unique identifier of volume to change
     ObjectID volume_id;
+
+    // Used for prevent flooding Undo/Redo stack on slider.
+    bool make_snapshot;
 };
 
 /// <summary>

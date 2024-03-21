@@ -20,7 +20,7 @@ Eigen::Matrix<typename Derived::Scalar, 2, 1, Eigen::DontAlign> circle_center(co
     static_assert(Derived ::IsVectorAtCompileTime && int(Derived ::SizeAtCompileTime) == 2, "circle_center(): 1st point is not a 2D vector");
     static_assert(Derived2::IsVectorAtCompileTime && int(Derived2::SizeAtCompileTime) == 2, "circle_center(): 2nd point is not a 2D vector");
     static_assert(Derived3::IsVectorAtCompileTime && int(Derived3::SizeAtCompileTime) == 2, "circle_center(): 3rd point is not a 2D vector");
-    static_assert(std::is_same<typename Derived::Scalar, typename Derived2::Scalar>::value && std::is_same<typename Derived::Scalar, typename Derived3::Scalar>::value,
+    static_assert(std::is_same<typename Derived::Scalar, typename Derived2::Scalar>::value && std::is_same<typename Derived::Scalar, typename Derived3::Scalar>::value, 
         "circle_center(): All three points must be of the same type.");
     using Scalar = typename Derived::Scalar;
     using Vector = Eigen::Matrix<Scalar, 2, 1, Eigen::DontAlign>;
@@ -50,7 +50,7 @@ std::optional<Eigen::Matrix<typename Derived::Scalar, 2, 1, Eigen::DontAlign>> t
     static_assert(Derived ::IsVectorAtCompileTime && int(Derived ::SizeAtCompileTime) == 2, "try_circle_center(): 1st point is not a 2D vector");
     static_assert(Derived2::IsVectorAtCompileTime && int(Derived2::SizeAtCompileTime) == 2, "try_circle_center(): 2nd point is not a 2D vector");
     static_assert(Derived3::IsVectorAtCompileTime && int(Derived3::SizeAtCompileTime) == 2, "try_circle_center(): 3rd point is not a 2D vector");
-    static_assert(std::is_same<typename Derived::Scalar, typename Derived2::Scalar>::value && std::is_same<typename Derived::Scalar, typename Derived3::Scalar>::value,
+    static_assert(std::is_same<typename Derived::Scalar, typename Derived2::Scalar>::value && std::is_same<typename Derived::Scalar, typename Derived3::Scalar>::value, 
         "try_circle_center(): All three points must be of the same type.");
     using Scalar = typename Derived::Scalar;
     using Vector = Eigen::Matrix<Scalar, 2, 1, Eigen::DontAlign>;

@@ -37,9 +37,7 @@ public:
         m_single_extruder_multi_material(false),
 	m_last_jerk(0), m_max_jerk(0),
         m_last_acceleration(0), m_max_acceleration(0),
-        m_last_bed_temperature(0), m_last_bed_temperature_reached(true), 
-        m_lifted(0),
-	m_to_lift_type(LiftType::NormalLift)
+        m_last_bed_temperature(0), m_last_bed_temperature_reached(true)
         {}
     Extruder*            extruder()             { return m_extruder; }
     const Extruder*      extruder()     const   { return m_extruder; }
@@ -92,28 +90,39 @@ public:
     // Prefix of the toolchange G-code line, to be used by the CoolingBuffer to separate sections of the G-code
     // printed with the same extruder.
     std::string toolchange_prefix() const;
-    std::string toolchange(unsigned int extruder_id, const std::vector<std::string>& mixing_colors, const std::string& target_color);
+    std::string toolchange(unsigned int extruder_id);
     std::string set_speed(double F, const std::string_view comment = {}, const std::string_view cooling_marker = {}) const;
+
+    std::string get_travel_to_xy_gcode(const Vec2d &point, const std::string_view comment) const;
     std::string travel_to_xy(const Vec2d &point, const std::string_view comment = {});
     std::string travel_to_xy_G2G3IJ(const Vec2d &point, const Vec2d &ij, const bool ccw, const std::string_view comment = {});
-    std::string travel_to_xyz(const Vec3d &point, const std::string_view comment = {});
+
+    /**
+     * @brief Return gcode with all three axis defined. Optionally adds feedrate.
+     *
+     * Feedrate is added the starting point "from" is specified.
+     *
+     * @param from Optional starting point of the travel.
+     * @param to Where to travel to.
+     * @param comment Description of the travel purpose.
+     */
+    std::string get_travel_to_xyz_gcode(const Vec3d &from, const Vec3d &to, const std::string_view comment) const;
+    std::string travel_to_xyz(const Vec3d &from, const Vec3d &to, const std::string_view comment = {});
+    std::string get_travel_to_z_gcode(double z, const std::string_view comment) const;
     std::string travel_to_z(double z, const std::string_view comment = {});
-    bool        will_move_z(double z) const;
     std::string extrude_to_xy(const Vec2d &point, double dE, const std::string_view comment = {});
     std::string extrude_to_xy_G2G3IJ(const Vec2d &point, const Vec2d &ij, const bool ccw, double dE, const std::string_view comment);
 //    std::string extrude_to_xyz(const Vec3d &point, double dE, const std::string_view comment = {});
     std::string retract(bool before_wipe = false);
     std::string retract_for_toolchange(bool before_wipe = false);
     std::string unretract();
-    std::string lift(LiftType lift_type = LiftType::NormalLift);
-    std::string unlift();
 
     // Current position of the printer, in G-code coordinates.
     // Z coordinate of current position contains zhop. If zhop is applied (this->zhop() > 0),
     // then the print_z = this->get_position().z() - this->zhop().
     Vec3d       get_position() const { return m_pos; }
-    // Current Z hop value.
-    double      get_zhop() const { return m_lifted; }
+    // Zhop value is obsolete. This is for backwards compability.
+    double      get_zhop() const { return 0; }
     // Update position of the print head based on the final position returned by a custom G-code block.
     // The new position Z coordinate contains the Z-hop.
     // GCodeWriter expects the custom script to NOT change print_z, only Z-hop, thus the print_z is maintained
@@ -150,9 +159,6 @@ private:
     unsigned int    m_last_jerk;
     unsigned int    m_last_bed_temperature;
     bool            m_last_bed_temperature_reached;
-    double          m_lifted;
-    double          m_to_lift;
-    LiftType        m_to_lift_type;
     Vec3d           m_pos = Vec3d::Zero();
 
     enum class Acceleration {
@@ -160,7 +166,6 @@ private:
         Print
     };
 
-    std::string _travel_to_z(double z, const std::string_view comment);
     std::string _retract(double length, double restart_extra, const std::string_view comment);
     std::string set_acceleration_internal(Acceleration type, unsigned int acceleration);
     //this flag is used to indicate whether the m_pos is real.
@@ -248,7 +253,8 @@ public:
     }
 
     void emit_string(const std::string_view s) {
-        strncpy(ptr_err.ptr, s.data(), s.size());
+        // Be aware that std::string_view::data() returns a pointer to a buffer that is not necessarily null-terminated.
+        memcpy(ptr_err.ptr, s.data(), s.size());
         ptr_err.ptr += s.size();
     }
 

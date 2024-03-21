@@ -21,9 +21,9 @@ void Wipe::init(const PrintConfig &config, const std::vector<unsigned int> &extr
         if (config.wipe.get_at(id)) {
             // Wipe length to extrusion ratio.
             const double xy_to_e = this->calc_xy_to_e_ratio(config, id);
-            wipe_xy = std::max(wipe_xy, xy_to_e * config.retract_length.get_at(id));
+            wipe_xy = std::max(wipe_xy, config.retract_length.get_at(id) / xy_to_e);
             if (multimaterial)
-                wipe_xy = std::max(wipe_xy, xy_to_e * config.retract_length_toolchange.get_at(id));
+                wipe_xy = std::max(wipe_xy, config.retract_length_toolchange.get_at(id) / xy_to_e);
         }
 
     if (wipe_xy == 0)
@@ -32,40 +32,23 @@ void Wipe::init(const PrintConfig &config, const std::vector<unsigned int> &extr
         this->enable(wipe_xy);
 }
 
-void Wipe::set_path(SmoothPath &&path, bool reversed)
-{
+void Wipe::set_path(SmoothPath &&path) {
     this->reset_path();
 
-    if (this->enabled() && ! path.empty()) {
-        if (reversed) {
-            m_path = std::move(path.back().path);
-            Geometry::ArcWelder::reverse(m_path);
-            int64_t len = Geometry::ArcWelder::estimate_path_length(m_path);
-            for (auto it = std::next(path.rbegin()); len < m_wipe_len_max && it != path.rend(); ++ it) {
-                if (it->path_attributes.role.is_bridge())
-                    break; // Do not perform a wipe on bridges.
-                assert(it->path.size() >= 2);
-                assert(m_path.back().point == it->path.back().point);
-                if (m_path.back().point != it->path.back().point)
-                    // ExtrusionMultiPath is interrupted in some place. This should not really happen.
-                    break;
-                len += Geometry::ArcWelder::estimate_path_length(it->path);
-                m_path.insert(m_path.end(), it->path.rbegin() + 1, it->path.rend());
-            }
-        } else {
-            m_path = std::move(path.front().path);
-            int64_t len = Geometry::ArcWelder::estimate_path_length(m_path);
-            for (auto it = std::next(path.begin()); len < m_wipe_len_max && it != path.end(); ++ it) {
-                if (it->path_attributes.role.is_bridge())
-                    break; // Do not perform a wipe on bridges.
-                assert(it->path.size() >= 2);
-                assert(m_path.back().point == it->path.front().point);
-                if (m_path.back().point != it->path.front().point)
-                    // ExtrusionMultiPath is interrupted in some place. This should not really happen.
-                    break;
-                len += Geometry::ArcWelder::estimate_path_length(it->path);
-                m_path.insert(m_path.end(), it->path.begin() + 1, it->path.end());
-            }
+    if (this->enabled() && !path.empty()) {
+        const coord_t wipe_len_max_scaled = scaled(m_wipe_len_max);
+        m_path = std::move(path.front().path);
+        int64_t len = Geometry::ArcWelder::estimate_path_length(m_path);
+        for (auto it = std::next(path.begin()); len < wipe_len_max_scaled && it != path.end(); ++it) {
+            if (it->path_attributes.role.is_bridge())
+                break; // Do not perform a wipe on bridges.
+            assert(it->path.size() >= 2);
+            assert(m_path.back().point == it->path.front().point);
+            if (m_path.back().point != it->path.front().point)
+                // ExtrusionMultiPath is interrupted in some place. This should not really happen.
+                break;
+            len += Geometry::ArcWelder::estimate_path_length(it->path);
+            m_path.insert(m_path.end(), it->path.begin() + 1, it->path.end());
         }
     }
 
@@ -164,7 +147,7 @@ std::string Wipe::wipe(GCodeGenerator &gcodegen, bool toolchange)
             return done;
         };
         // Start with the current position, which may be different from the wipe path start in case of loop clipping.
-        Vec2d prev = gcodegen.point_to_gcode_quantized(gcodegen.last_pos());
+        Vec2d prev = gcodegen.point_to_gcode_quantized(*gcodegen.last_position);
         auto  it   = this->path().begin();
         Vec2d p    = gcodegen.point_to_gcode(it->point + m_offset);
         ++ it;
@@ -185,14 +168,14 @@ std::string Wipe::wipe(GCodeGenerator &gcodegen, bool toolchange)
                         wipe_arc(prev, p, unscaled<double>(it->radius), it->ccw()))
                         break;
                     prev = p;
-                }return gcode;
+                }
             }
         }
         if (wiped) {
             // add tag for processor
             assert(p == GCodeFormatter::quantize(p));
             gcode += ";" + GCodeProcessor::reserved_tag(GCodeProcessor::ETags::Wipe_End) + "\n";
-            gcodegen.set_last_pos(gcodegen.gcode_to_point(p));
+            gcodegen.last_position = gcodegen.gcode_to_point(p);
         }
     }
 

@@ -451,7 +451,7 @@ struct WipeTowerData
     std::unique_ptr<std::vector<WipeTower::ToolChangeResult>> priming;
     std::vector<std::vector<WipeTower::ToolChangeResult>> tool_changes;
     std::unique_ptr<WipeTower::ToolChangeResult>          final_purge;
-    std::vector<float>                                    used_filament;
+    std::vector<std::pair<float, std::vector<float>>>     used_filament_until_layer;
     int                                                   number_of_toolchanges;
 
     // Depth of the wipe tower to pass to GLCanvas3D for exact bounding box:
@@ -471,10 +471,12 @@ struct WipeTowerData
         priming.reset(nullptr);
         tool_changes.clear();
         final_purge.reset(nullptr);
-        used_filament.clear();
+        used_filament_until_layer.clear();
         number_of_toolchanges = -1;
         depth = 0.f;
+        z_and_depth_pairs.clear();
         brim_width = 0.f;
+        height = 0.f;
         width = 0.f;
         first_layer_height = 0.f;
         cone_angle = 0.f;
@@ -503,6 +505,7 @@ struct PrintStatistics
     double                          total_weight;
     double                          total_wipe_tower_cost;
     double                          total_wipe_tower_filament;
+    double                          total_wipe_tower_filament_weight;
     std::vector<unsigned int>       printing_extruders;
     unsigned int                    initial_extruder_id;
     std::string                     initial_filament_type;
@@ -524,6 +527,7 @@ struct PrintStatistics
         total_weight           = 0.;
         total_wipe_tower_cost  = 0.;
         total_wipe_tower_filament = 0.;
+        total_wipe_tower_filament_weight = 0.;
         initial_extruder_id    = 0;
         initial_filament_type.clear();
         printing_filament_types.clear();
@@ -545,6 +549,8 @@ struct PrintStatistics
     static const std::string TotalFilamentCost;
     static const std::string TotalFilamentCostMask;
     static const std::string TotalFilamentCostValueMask;
+    static const std::string TotalFilamentUsedWipeTower;
+    static const std::string TotalFilamentUsedWipeTowerValueMask;
 };
 
 using PrintObjectPtrs          = std::vector<PrintObject*>;
@@ -632,10 +638,6 @@ public:
     // How many of PrintObject::copies() over all print objects are there?
     // If zero, then the print is empty and the print shall not be executed.
     unsigned int                num_object_instances() const;
-
-    // For Perl bindings. 
-    PrintObjectPtrs&            objects_mutable() { return m_objects; }
-    PrintRegionPtrs&            print_regions_mutable() { return m_print_regions; }
 
     const ExtrusionEntityCollection& skirt() const { return m_skirt; }
     const ExtrusionEntityCollection& brim() const { return m_brim; }

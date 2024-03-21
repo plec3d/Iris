@@ -74,15 +74,24 @@ PreferencesDialog::PreferencesDialog(wxWindow* parent) :
 	build();
 
     wxSize sz = GetSize();
-    sz.x += em_unit();
+    bool is_scrollbar_shown = false;
 
     const size_t pages_cnt = tabs->GetPageCount();
     for (size_t tab_id = 0; tab_id < pages_cnt; tab_id++) {
         wxSizer* tab_sizer = tabs->GetPage(tab_id)->GetSizer();
         wxScrolledWindow* scrolled = static_cast<wxScrolledWindow*>(tab_sizer->GetItem(size_t(0))->GetWindow());
         scrolled->SetScrollRate(0, 5);
+
+        is_scrollbar_shown |= scrolled->GetScrollLines(wxVERTICAL) > 0;
     }
 
+    if (is_scrollbar_shown)
+        sz.x += 2*em_unit();
+#ifdef __WXGTK__
+    // To correct Layout of wxScrolledWindow we need at least small change of size
+    else
+        sz.x += 1;
+#endif
     SetSize(sz);
 
 	m_highlighter.set_timer_owner(this, 0);
@@ -127,6 +136,12 @@ void PreferencesDialog::show(const std::string& highlight_opt_key /*= std::strin
 
 		for (const std::string& opt_key : {"suppress_hyperlinks", "downloader_url_registered"})
 			m_optgroup_other->set_value(opt_key, app_config->get_bool(opt_key));
+
+		for (const std::string& opt_key : { "default_action_on_close_application"
+										   ,"default_action_on_new_project"
+										   ,"default_action_on_select_preset" })
+			m_optgroup_general->set_value(opt_key, app_config->get(opt_key) == "none");
+		m_optgroup_general->set_value("default_action_on_dirty_project", app_config->get("default_action_on_dirty_project").empty());
 
 		// update colors for color pickers of the labels
 		update_color(m_sys_colour, wxGetApp().get_label_clr_sys());
@@ -549,7 +564,7 @@ void PreferencesDialog::build()
 
 #ifdef _MSW_DARK_MODE
 		append_bool_option(m_optgroup_gui, "tabs_as_menu",
-			L("Set settings tabs as menu items (experimental)"),
+			L("Set settings tabs as menu items"),
 			L("If enabled, Settings Tabs will be placed as menu items. If disabled, old UI will be used."),
 			app_config->get_bool("tabs_as_menu"));
 #endif
@@ -614,6 +629,11 @@ void PreferencesDialog::build()
 		};
 
 
+		append_bool_option(m_optgroup_other, "use_binary_gcode_when_supported", L("Use binary G-code when the printer supports it"),
+                    L("If the 'Supports binary G-code' option is enabled in Printer Settings, "
+                      "checking this option will result in the export of G-code in binary format."),
+                    app_config->get_bool("use_binary_gcode_when_supported"));
+
 		append_bool_option(m_optgroup_other, "suppress_hyperlinks",
 			L("Suppress to open hyperlink in browser"),
 			L("If enabled, PrusaSlicer will not open a hyperlinks in your browser."),
@@ -653,7 +673,7 @@ void PreferencesDialog::build()
 
 #ifdef _WIN32
 		// Add "Dark Mode" tab
-		m_optgroup_dark_mode = create_options_tab(_L("Dark mode (experimental)"), tabs);
+		m_optgroup_dark_mode = create_options_tab(_L("Dark mode"), tabs);
 		m_optgroup_dark_mode->m_on_change = [this](t_config_option_key opt_key, boost::any value) {
 			if (auto it = m_values.find(opt_key); it != m_values.end()) {
 				m_values.erase(it); // we shouldn't change value, if some of those parameters were selected, and then deselected

@@ -695,6 +695,8 @@ void ObjectList::update_name_in_model(const wxDataViewItem& item) const
             //update object name with text marker in ObjectList
             m_objects_model->SetName(get_item_name(obj->name, true), item);
         }
+        // Renaming an object should invalidate gcode export - schedule Print::apply call.
+        wxGetApp().plater()->schedule_background_process();
         return;
     }
 
@@ -1043,8 +1045,8 @@ void ObjectList::show_context_menu(const bool evt_context_menu)
                     return;
                 const ModelVolume *volume = object(obj_idx)->volumes[vol_idx];
 
-                menu = volume->is_text() ? plater->text_part_menu() :
-                       volume->is_svg() ? plater->svg_part_menu() :
+                menu = volume->is_text() ? plater->text_part_menu() : 
+                       volume->is_svg() ? plater->svg_part_menu() : 
                     plater->part_menu();
             }
             else
@@ -1793,7 +1795,7 @@ void ObjectList::load_mesh_object(const TriangleMesh &mesh, const std::string &n
 #ifdef _DEBUG
     check_model_ids_validity(model);
 #endif /* _DEBUG */
-
+    
     ModelObject* new_object = model.add_object();
     new_object->name = name;
     new_object->add_instance(); // each object should have at list one instance
@@ -1805,6 +1807,12 @@ void ObjectList::load_mesh_object(const TriangleMesh &mesh, const std::string &n
     // set a default extruder value, since user can't add it manually
     new_volume->config.set_key_value("extruder", new ConfigOptionInt(0));
     new_object->invalidate_bounding_box();
+    
+    auto bb = mesh.bounding_box();
+    new_object->translate(-bb.center());
+    new_object->instances[0]->set_offset(
+        center ? to_3d(wxGetApp().plater()->build_volume().bounding_volume2d().center(), -new_object->origin_translation.z()) :
+    bb.center());
 
     auto bb = mesh.bounding_box();
     new_object->translate(-bb.center());
@@ -1904,7 +1912,7 @@ void ObjectList::del_info_item(const int obj_idx, InfoItemType type)
         cnv->get_gizmos_manager().reset_all_states();
         Plater::TakeSnapshot(plater, _L("Remove Multi Material painting"));
         for (ModelVolume* mv : (*m_objects)[obj_idx]->volumes)
-            mv->mmu_segmentation_facets.reset();
+            mv->mm_segmentation_facets.reset();
         break;
 
     case InfoItemType::Sinking:
@@ -2474,7 +2482,9 @@ bool ObjectList::has_selected_cut_object() const
 
     for (wxDataViewItem item : sels) {
         const int obj_idx = m_objects_model->GetObjectIdByItem(item);
-        if (obj_idx >= 0 && object(obj_idx)->is_cut())
+        // ys_FIXME: The obj_idx<size condition is a workaround for https://github.com/prusa3d/PrusaSlicer/issues/11186,
+        // but not the correct fix. The deleted item probably should not be in sels in the first place.
+        if (obj_idx >= 0 && obj_idx < int(m_objects->size()) && object(obj_idx)->is_cut())
             return true;
     }
 
@@ -2894,7 +2904,7 @@ void ObjectList::update_info_items(size_t obj_idx, wxDataViewItemArray* selectio
                                       [type](const ModelVolume *mv) {
                                           return !(type == InfoItemType::CustomSupports ? mv->supported_facets.empty() :
                                                    type == InfoItemType::CustomSeam     ? mv->seam_facets.empty() :
-                                                                                          mv->mmu_segmentation_facets.empty());
+                                                                                          mv->mm_segmentation_facets.empty());
                                       });
             break;
 
@@ -4561,7 +4571,7 @@ void ObjectList::rename_item()
         update_name_in_model(item);
 }
 
-void ObjectList::fix_through_winsdk()
+void ObjectList::fix_through_winsdk() 
 {
     // Do not fix anything when a gizmo is open. There might be issues with updates
     // and what is worse, the snapshot time would refer to the internal stack.
@@ -4669,21 +4679,7 @@ void ObjectList::fix_through_winsdk()
     progress_dlg.Update(100, "");
 
     // Show info notification
-    wxString msg;
-    wxString bullet_suf = "\n   - ";
-    if (!succes_models.empty()) {
-        msg = _L_PLURAL("The following model was repaired successfully", "The following models were repaired successfully", succes_models.size()) + ":";
-        for (auto& model : succes_models)
-            msg += bullet_suf + from_u8(model);
-        msg += "\n\n";
-    }
-    if (!failed_models.empty()) {
-        msg += _L_PLURAL("Folowing model repair failed", "Folowing models repair failed", failed_models.size()) + ":\n";
-        for (auto& model : failed_models)
-            msg += bullet_suf + from_u8(model.first) + ": " + _(model.second);
-    }
-    if (msg.IsEmpty())
-        msg = _L("Repairing was canceled");
+    wxString msg = MenuFactory::get_repaire_result_message(succes_models, failed_models);
     plater->get_notification_manager()->push_notification(NotificationType::RepairFinished, NotificationManager::NotificationLevel::PrintInfoShortNotificationLevel, boost::nowide::narrow(msg));
 }
 

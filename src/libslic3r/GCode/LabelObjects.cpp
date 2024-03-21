@@ -1,9 +1,12 @@
 #include "LabelObjects.hpp"
-#include <boost/algorithm/string/split.hpp>
+
 #include "ClipperUtils.hpp"
+#include "GCode/GCodeWriter.hpp"
 #include "Model.hpp"
 #include "Print.hpp"
 #include "TriangleMeshSlicer.hpp"
+
+#include "boost/algorithm/string/replace.hpp"
 
 
 namespace Slic3r::GCode {
@@ -39,10 +42,10 @@ Polygon instance_outline(const PrintInstance* pi)
 }; // anonymous namespace
 
 
-void LabelObjects::init(const Print& print)
+void LabelObjects::init(const SpanOfConstPtrs<PrintObject>& objects, LabelObjectsStyle label_object_style, GCodeFlavor gcode_flavor)
 {
-    m_label_objects_style = print.config().gcode_label_objects;
-    m_flavor = print.config().gcode_flavor;
+    m_label_objects_style = label_object_style;
+    m_flavor = gcode_flavor;
 
     if (m_label_objects_style == LabelObjectsStyle::Disabled)
         return;
@@ -51,10 +54,10 @@ void LabelObjects::init(const Print& print)
 
     // Iterate over all PrintObjects and their PrintInstances, collect PrintInstances which
     // belong to the same ModelObject.
-    for (const PrintObject* po : print.objects())
+    for (const PrintObject* po : objects)
         for (const PrintInstance& pi : po->instances())
             model_object_to_print_instances[pi.model_instance->get_object()].emplace_back(&pi);
-    
+
     // Now go through the map, assign a unique_id to each of the PrintInstances and get the indices of the
     // respective ModelObject and ModelInstance so we can use them in the tags. This will maintain
     // indices even in case that some instances are rotated (those end up in different PrintObjects)
@@ -68,9 +71,7 @@ void LabelObjects::init(const Print& print)
             int instance_id = int(std::find(model_object->instances.begin(), model_object->instances.end(), pi->model_instance) - model_object->instances.begin());
 
             // Now compose the name of the object and define whether indexing is 0 or 1-based.
-            std::vector<std::string> args;
-            boost::split(args, model_object->name, boost::is_any_of("//"));
-            std::string name = args[0];
+            std::string name = model_object->name;
             if (m_label_objects_style == LabelObjectsStyle::Octoprint) {
                 // use zero-based indexing for objects and instances, as we always have done
                 name += " id:" + std::to_string(object_id) + " copy " + std::to_string(instance_id); 
@@ -83,55 +84,108 @@ void LabelObjects::init(const Print& print)
                 if (object_has_more_instances)
                     name += " (Instance " + std::to_string(instance_id) + ")";
                 if (m_flavor == gcfKlipper) {
-                    const std::string banned = "-. \r\n\v\t\f";
+                    // Disallow Klipper special chars, common illegal filename chars, etc.
+                    const std::string banned = "\b\t\n\v\f\r \"#%&\'*-./:;<>\\";
                     std::replace_if(name.begin(), name.end(), [&banned](char c) { return banned.find(c) != std::string::npos; }, '_');
                 }
             }
 
-            m_label_data.emplace(pi, LabelData{name, unique_id});
+            // Now calculate the polygon and center for Cancel Object (this is not always used).
+            Polygon outline = instance_outline(pi);
+            assert(! outline.empty());
+            outline.douglas_peucker(50000.f);
+            Point center = outline.centroid();
+            char buffer[64];
+            std::snprintf(buffer, sizeof(buffer) - 1, "%.3f,%.3f", unscale<float>(center[0]), unscale<float>(center[1]));
+            std::string center_str(buffer);
+            std::string polygon_str = std::string("[");
+            for (const Point& point : outline) {
+                std::snprintf(buffer, sizeof(buffer) - 1, "[%.3f,%.3f],", unscale<float>(point[0]), unscale<float>(point[1]));
+                polygon_str += buffer;
+            }
+            polygon_str.pop_back();
+            polygon_str += "]";
+
+            m_label_data.emplace_back(LabelData{pi, name, center_str, polygon_str, unique_id});
             ++unique_id;
         }
     }
 }
 
+bool LabelObjects::update(const PrintInstance *instance) {
+    if (this->last_operation_instance == instance) {
+        return false;
+    }
+    this->last_operation_instance = instance;
+    return true;
+}
 
+std::string LabelObjects::maybe_start_instance(GCodeWriter& writer) {
+    if (current_instance == nullptr && last_operation_instance != nullptr) {
+        current_instance = last_operation_instance;
+
+        std::string result{this->start_object(*current_instance, LabelObjects::IncludeName::No)};
+        result += writer.reset_e(true);
+        return result;
+    }
+    return "";
+}
+
+std::string LabelObjects::maybe_stop_instance() {
+    if (current_instance != nullptr) {
+        const std::string result{this->stop_object(*current_instance)};
+        current_instance = nullptr;
+        return result;
+    }
+    return "";
+}
+
+std::string LabelObjects::maybe_change_instance(GCodeWriter& writer) {
+    if (last_operation_instance != current_instance) {
+        const std::string stop_instance_gcode{this->maybe_stop_instance()};
+        // Be carefull with refactoring: this->maybe_stop_instance() + this->maybe_start_instance()
+        // may not be evaluated in order. The order is indeed undefined!
+        return stop_instance_gcode + this->maybe_start_instance(writer);
+    }
+    return "";
+}
+
+bool LabelObjects::has_active_instance() {
+    return this->current_instance != nullptr;
+}
 
 std::string LabelObjects::all_objects_header() const
 {
     if (m_label_objects_style == LabelObjectsStyle::Disabled)
         return std::string();
 
-    std::string out;
-
-    // Let's sort the values according to unique_id so they are in the same order in which they were added.
-    std::vector<std::pair<const PrintInstance*, LabelData>> label_data_sorted;
-    for (const auto& pi_and_label : m_label_data)
-        label_data_sorted.emplace_back(pi_and_label);
-    std::sort(label_data_sorted.begin(), label_data_sorted.end(), [](const auto& ld1, const auto& ld2) { return ld1.second.unique_id < ld2.second.unique_id; });
+    std::string out;   
 
     out += "\n";
-    for (const auto& [print_instance, label] : label_data_sorted) {
-        if (m_flavor == gcfKlipper)  {
-            char buffer[64];
-            out += "EXCLUDE_OBJECT_DEFINE NAME=" + label.name;
-            Polygon outline = instance_outline(print_instance);
-            assert(! outline.empty());
-            outline.douglas_peucker(50000.f);
-            Point center = outline.centroid();
-            std::snprintf(buffer, sizeof(buffer) - 1, " CENTER=%.3f,%.3f", unscale<float>(center[0]), unscale<float>(center[1]));
-            out += buffer + std::string(" POLYGON=[");
-            for (const Point& point : outline) {
-                std::snprintf(buffer, sizeof(buffer) - 1, "[%.3f,%.3f],", unscale<float>(point[0]), unscale<float>(point[1]));
-                out += buffer;
-            }
-            out.pop_back();
-            out += "]\n";
-        } else {
-            out += start_object(*print_instance, IncludeName::Yes);
-            out += stop_object(*print_instance);
+    for (const LabelData& label : m_label_data) {
+        if (m_label_objects_style == LabelObjectsStyle::Firmware && m_flavor == gcfKlipper)
+            out += "EXCLUDE_OBJECT_DEFINE NAME='" + label.name + "' CENTER=" + label.center + " POLYGON=" + label.polygon + "\n";
+        else {
+            out += start_object(*label.pi, IncludeName::Yes);
+            out += stop_object(*label.pi);
         }
     }
     out += "\n";
+    return out;
+}
+
+std::string LabelObjects::all_objects_header_singleline_json() const
+{
+    std::string out;
+    out = "{\"objects\":[";
+    for (size_t i=0; i<m_label_data.size(); ++i) {
+        const LabelData& label = m_label_data[i];
+        out += std::string("{\"name\":\"") + label.name + "\",";
+        out += "\"polygon\":" + label.polygon + "}";
+        if (i != m_label_data.size() - 1)
+            out += ",";
+    }
+    out += "]}";
     return out;
 }
 
@@ -142,20 +196,21 @@ std::string LabelObjects::start_object(const PrintInstance& print_instance, Incl
     if (m_label_objects_style == LabelObjectsStyle::Disabled)
         return std::string();
 
-    const LabelData& label = m_label_data.at(&print_instance);
+    const LabelData& label = *std::find_if(m_label_data.begin(), m_label_data.end(), [&print_instance](const LabelData& ld) { return ld.pi == &print_instance; });
 
     std::string out;
     if (m_label_objects_style == LabelObjectsStyle::Octoprint)
         out += std::string("; printing object ") + label.name + "\n";
     else if (m_label_objects_style == LabelObjectsStyle::Firmware) {
         if (m_flavor == GCodeFlavor::gcfMarlinFirmware || m_flavor == GCodeFlavor::gcfMarlinLegacy || m_flavor == GCodeFlavor::gcfRepRapFirmware) {
-            out += std::string("M486 S") + std::to_string(label.unique_id) + "\n";
+            out += std::string("M486 S") + std::to_string(label.unique_id);
             if (include_name == IncludeName::Yes) {
-                out += std::string("M486 A");
-                out += (m_flavor == GCodeFlavor::gcfRepRapFirmware ? (std::string("\"") + label.name + "\"") : label.name) + "\n";
+                out += (m_flavor == GCodeFlavor::gcfRepRapFirmware ? " A" : "\nM486 A");
+                out += (m_flavor == GCodeFlavor::gcfRepRapFirmware ? (std::string("\"") + label.name + "\"") : label.name);
             }
+            out += "\n";
         } else if (m_flavor == gcfKlipper)
-            out += "EXCLUDE_OBJECT_START NAME=" + label.name + "\n";
+            out += "EXCLUDE_OBJECT_START NAME='" + label.name + "'\n";
         else {
             // Not supported by / implemented for the other firmware flavors.
         }
@@ -170,7 +225,7 @@ std::string LabelObjects::stop_object(const PrintInstance& print_instance) const
     if (m_label_objects_style == LabelObjectsStyle::Disabled)
         return std::string();
 
-    const LabelData& label = m_label_data.at(&print_instance);
+    const LabelData& label = *std::find_if(m_label_data.begin(), m_label_data.end(), [&print_instance](const LabelData& ld) { return ld.pi == &print_instance; });
 
     std::string out;
     if (m_label_objects_style == LabelObjectsStyle::Octoprint)
@@ -179,7 +234,7 @@ std::string LabelObjects::stop_object(const PrintInstance& print_instance) const
         if (m_flavor == GCodeFlavor::gcfMarlinFirmware || m_flavor == GCodeFlavor::gcfMarlinLegacy || m_flavor == GCodeFlavor::gcfRepRapFirmware)
             out += std::string("M486 S-1\n");
         else if (m_flavor ==gcfKlipper)
-            out += "EXCLUDE_OBJECT_END NAME=" + label.name + "\n";
+            out += "EXCLUDE_OBJECT_END NAME='" + label.name + "'\n";
         else {
             // Not supported by / implemented for the other firmware flavors.
         }

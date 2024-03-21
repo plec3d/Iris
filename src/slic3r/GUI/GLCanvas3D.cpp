@@ -80,6 +80,7 @@
 #include "DoubleSlider.hpp"
 
 #include <imgui/imgui_internal.h>
+#include <slic3r/GUI/Gizmos/GLGizmoMmuSegmentation.hpp>
 
 static constexpr const float TRACKBALLSIZE = 0.8f;
 
@@ -89,7 +90,7 @@ static const Slic3r::ColorRGBA ERROR_BG_DARK_COLOR    = { 0.478f, 0.192f, 0.039f
 static const Slic3r::ColorRGBA ERROR_BG_LIGHT_COLOR   = { 0.753f, 0.192f, 0.039f, 1.0f };
 
 // Number of floats
-static constexpr const size_t MAX_VERTEX_BUFFER_SIZE     = 131072 * 6; // 3.15MB
+static constexpr const size_t MAX_VERTEX_BUFFER_SIZE = 131072 * 6; // 3.15MB
 
 #define SHOW_IMGUI_DEMO_WINDOW
 #ifdef SHOW_IMGUI_DEMO_WINDOW
@@ -106,7 +107,7 @@ RetinaHelper::~RetinaHelper() {}
 float RetinaHelper::get_scale_factor() { return float(m_window->GetContentScaleFactor()); }
 #endif // __WXGTK3__
 
-// Fixed the collision between BuildVolume::Type::Convex and macro Convex defined inside ././/include/X11/X.h that is included by WxWidgets 3.0.
+// Fixed the collision between BuildVolume::Type::Convex and macro Convex defined inside /usr/include/X11/X.h that is included by WxWidgets 3.0.
 #if defined(__linux__) && defined(Convex)
 #undef Convex
 #endif
@@ -1279,14 +1280,7 @@ void GLCanvas3D::SLAView::render_debug_window()
     imgui.end();
 }
 #endif // ENABLE_SLA_VIEW_DEBUG_WINDOW
-const float GLCanvas3D::get_scale() const
-{
-#if ENABLE_RETINA_GL
-    return m_retina_helper->get_scale_factor();
-#else
-    return 1.0f;
-#endif
-}
+
 GLCanvas3D::SLAView::InstancesCacheItem* GLCanvas3D::SLAView::find_instance_item(const GLVolume::CompositeID& id)
 {
     auto it = std::find_if(m_instances_cache.begin(), m_instances_cache.end(),
@@ -2025,7 +2019,7 @@ void GLCanvas3D::render()
     }
 
 #if ENABLE_BINARIZED_GCODE_DEBUG_WINDOW
-    if (wxGetApp().plater()->is_view3D_shown() && current_printer_technology() != ptSLA && fff_print()->config().gcode_binary)
+    if (wxGetApp().plater()->is_view3D_shown() && current_printer_technology() != ptSLA && fff_print()->config().binary_gcode)
         show_binary_gcode_debug_window();
 #endif // ENABLE_BINARIZED_GCODE_DEBUG_WINDOW
 
@@ -2530,7 +2524,7 @@ void GLCanvas3D::reload_scene(bool refresh_immediately, bool force_full_scene_re
         const bool wt = dynamic_cast<const ConfigOptionBool*>(m_config->option("wipe_tower"))->value;
         const bool co = dynamic_cast<const ConfigOptionBool*>(m_config->option("complete_objects"))->value;
 
-        if ((extruders_count > 1 || wxGetApp().virtual_extruders_cnt() > 0 ) && wt && !co) {
+        if (extruders_count > 1 && wt && !co) {
 
             const float x = dynamic_cast<const ConfigOptionFloat*>(m_config->option("wipe_tower_x"))->value;
             const float y = dynamic_cast<const ConfigOptionFloat*>(m_config->option("wipe_tower_y"))->value;
@@ -3181,7 +3175,10 @@ void GLCanvas3D::on_key(wxKeyEvent& evt)
                     // m_canvas->HandleAsNavigationKey(evt);   // XXX: Doesn't work in some cases / on Linux
                     post_event(SimpleEvent(EVT_GLCANVAS_TAB));
                 }
-                else if (keyCode == WXK_TAB && evt.ShiftDown() && ! wxGetApp().is_gcode_viewer()) {
+                else if (! wxGetApp().is_gcode_viewer() && keyCode == WXK_TAB &&
+                    // Use strong condition for modifiers state to avoid cases when Shift can be combined with other modifiers
+                    // (see https://github.com/prusa3d/PrusaSlicer/issues/7799)
+                    evt.GetModifiers() == wxMOD_SHIFT) {
                     // Collapse side-panel with Shift+Tab
                     post_event(SimpleEvent(EVT_GLCANVAS_COLLAPSE_SIDEBAR));
                 }
@@ -4908,23 +4905,43 @@ void GLCanvas3D::_render_thumbnail_internal(ThumbnailData& thumbnail_data, const
 
     camera.apply_projection(volumes_box, near_z, far_z);
 
-    GLShaderProgram* shader = wxGetApp().get_shader("gouraud_light");
-    if (shader == nullptr)
-        return;
+    const ModelObjectPtrs &model_objects                = GUI::wxGetApp().model().objects;
+    std::vector<ColorRGBA> extruders_colors             = get_extruders_colors();
+    const bool             is_enabled_painted_thumbnail = !model_objects.empty() && !extruders_colors.empty();
 
     if (thumbnail_params.transparent_background)
         glsafe(::glClearColor(0.0f, 0.0f, 0.0f, 0.0f));
 
     glsafe(::glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT));
     glsafe(::glEnable(GL_DEPTH_TEST));
-
-    shader->start_using();
-    shader->set_uniform("emission_factor", 0.0f);
+    glsafe(::glCullFace(GL_BACK));
 
     const Transform3d& projection_matrix = camera.get_projection_matrix();
 
-    for (GLVolume* vol : visible_volumes) {
-        vol->model.set_color((vol->printable && !vol->is_outside) ? vol->color : ColorRGBA::GRAY());
+    const int extruders_count = wxGetApp().extruders_edited_cnt();
+    for (GLVolume *vol : visible_volumes) {
+        const int obj_idx = vol->object_idx();
+        const int vol_idx = vol->volume_idx();
+        const bool render_as_painted = is_enabled_painted_thumbnail && obj_idx >= 0 && vol_idx >= 0 && !model_objects[obj_idx]->volumes[vol_idx]->mm_segmentation_facets.empty();
+        GLShaderProgram* shader = wxGetApp().get_shader(render_as_painted ? "mm_gouraud" : "gouraud_light");
+        if (shader == nullptr)
+            continue;
+
+        shader->start_using();
+        const std::array<float, 4> clp_data = { 0.0f, 0.0f, 1.0f, FLT_MAX };
+        const std::array<float, 2> z_range = { -FLT_MAX, FLT_MAX };
+        const bool is_left_handed = vol->is_left_handed();
+        if (render_as_painted) {
+            shader->set_uniform("volume_world_matrix", vol->world_matrix());
+            shader->set_uniform("volume_mirrored", is_left_handed);
+            shader->set_uniform("clipping_plane", clp_data);
+            shader->set_uniform("z_range", z_range);
+        }
+        else {
+            shader->set_uniform("emission_factor", 0.0f);
+            vol->model.set_color((vol->printable && !vol->is_outside) ? vol->color : ColorRGBA::GRAY());
+        }
+
         // the volume may have been deactivated by an active gizmo
         const bool is_active = vol->is_active;
         vol->is_active = true;
@@ -4932,12 +4949,30 @@ void GLCanvas3D::_render_thumbnail_internal(ThumbnailData& thumbnail_data, const
         shader->set_uniform("view_model_matrix", view_matrix * model_matrix);
         shader->set_uniform("projection_matrix", projection_matrix);
         const Matrix3d view_normal_matrix = view_matrix.matrix().block(0, 0, 3, 3) * model_matrix.matrix().block(0, 0, 3, 3).inverse().transpose();
-        shader->set_uniform("view_normal_matrix", view_normal_matrix); 
-        vol->render();
+        shader->set_uniform("view_normal_matrix", view_normal_matrix);
+
+        if (is_left_handed)
+            glsafe(::glFrontFace(GL_CW));
+
+        if (render_as_painted) {
+            const ModelVolume& model_volume = *model_objects[obj_idx]->volumes[vol_idx];
+            const size_t extruder_idx = get_extruder_color_idx(model_volume, extruders_count);
+            TriangleSelectorMmGui ts(model_volume.mesh(), extruders_colors, extruders_colors[extruder_idx]);
+            ts.deserialize(model_volume.mm_segmentation_facets.get_data(), true);
+            ts.request_update_render_data();
+
+            ts.render(nullptr, model_matrix);
+        }
+        else
+            vol->render();
+
+        if (is_left_handed)
+            glsafe(::glFrontFace(GL_CCW));
+
+        shader->stop_using();
+
         vol->is_active = is_active;
     }
-
-    shader->stop_using();
 
     glsafe(::glDisable(GL_DEPTH_TEST));
 
@@ -6805,14 +6840,22 @@ void GLCanvas3D::_load_print_toolpaths(const BuildVolume &build_volume)
             _3DScene::extrusionentity_to_verts(print->brim(), print_zs[i], Point(0, 0), init_data);
         _3DScene::extrusionentity_to_verts(print->skirt(), print_zs[i], Point(0, 0), init_data);
         // Ensure that no volume grows over the limits. If the volume is too large, allocate a new one.
-        if (init_data.vertices_size_bytes() > MAX_VERTEX_BUFFER_SIZE) {
+        if (init_data.vertices_size_bytes() >= MAX_VERTEX_BUFFER_SIZE) {
             volume->model.init_from(std::move(init_data));
-            GLVolume &vol = *volume;
-            volume = m_volumes.new_toolpath_volume(vol.color);
+            volume->is_outside = !contains(build_volume, volume->model);
+            volume = m_volumes.new_toolpath_volume(volume->color);
+            init_data = GLModel::Geometry();
         }
     }
-    volume->model.init_from(std::move(init_data));
-    volume->is_outside = !contains(build_volume, volume->model);
+    init_data = GLModel::Geometry();
+    if (init_data.is_empty()) {
+        delete volume;
+        m_volumes.volumes.pop_back();
+    }
+    else {
+        volume->model.init_from(std::move(init_data));
+        volume->is_outside = !contains(build_volume, volume->model);
+    }
 }
 
 void GLCanvas3D::_load_print_object_toolpaths(const PrintObject& print_object, const BuildVolume& build_volume, const std::vector<std::string>& str_tool_colors, const std::vector<CustomGCode::Item>& color_print_values)

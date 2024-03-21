@@ -203,7 +203,7 @@ wxPoint OG_CustomCtrl::get_pos(const Line& line, Field* field_in/* = nullptr*/)
                 if (opt.opt.gui_type == ConfigOptionDef::GUIType::legend)
                     h_pos += 2 * blinking_button_width;
 
-                h_pos += field->getWindow()->GetSize().x + m_h_gap;
+                h_pos += (opt.opt.width >= 0 ? opt.opt.width * m_em_unit : field->getWindow()->GetSize().x) + m_h_gap;
 
                 if (option_set.size() == 1 && option_set.front().opt.full_width)
                     break;
@@ -664,7 +664,7 @@ void OG_CustomCtrl::CtrlLine::render(wxDC& dc, wxCoord v_pos)
                         h_pos += child->GetWindow()->GetSize().x + ctrl->m_h_gap;
             }
             else if (field->getWindow())
-                h_pos += field->getWindow()->GetSize().x + ctrl->m_h_gap;
+                h_pos += (opt.opt.width >= 0 ? opt.opt.width * ctrl->m_em_unit : field->getWindow()->GetSize().x) + ctrl->m_h_gap;
         }
 
         // add field
@@ -790,12 +790,12 @@ wxPoint OG_CustomCtrl::CtrlLine::draw_act_bmps(wxDC& dc, wxPoint pos, const wxBi
 }
 
 wxCoord OG_CustomCtrl::CtrlLine::draw_edit_bmp(wxDC &dc, wxPoint pos, const wxBitmapBundle *bmp_edit)
-{
+{ 
     const wxCoord h_pos = pos.x + ctrl->m_h_gap;
     const wxCoord v_pos = pos.y;
     const int bmp_w = get_bitmap_size(bmp_edit, ctrl).GetWidth();
     rects_edit_icon.emplace_back(wxRect(h_pos, v_pos, bmp_w, bmp_w));
-
+    
     dc.DrawBitmap(bmp_edit->GetBitmapFor(ctrl), h_pos, v_pos);
 
     return h_pos + bmp_w + ctrl->m_h_gap;

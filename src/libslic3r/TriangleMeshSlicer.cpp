@@ -2037,6 +2037,26 @@ std::vector<ExPolygons> slice_mesh_ex(
                     this_mode == MeshSlicingParams::SlicingMode::EvenOdd ? ClipperLib::pftEvenOdd : 
                     this_mode == MeshSlicingParams::SlicingMode::PositiveLargestContour ? ClipperLib::pftPositive : ClipperLib::pftNonZero,
                     &expolygons);
+
+#if 0
+//#ifndef NDEBUG
+                // Test whether the expolygons in a single layer overlap.
+                for (size_t i = 0; i < expolygons.size(); ++ i)
+                    for (size_t j = i + 1; j < expolygons.size(); ++ j) {
+                        Polygons overlap = intersection(expolygons[i], expolygons[j]);
+                        assert(overlap.empty());
+                    }
+#endif
+#if 0
+//#ifndef NDEBUG
+                for (const ExPolygon &ex : expolygons) {
+                    assert(! has_duplicate_points(ex.contour));
+                    for (const Polygon &hole : ex.holes)
+                        assert(! has_duplicate_points(hole));
+                    assert(! has_duplicate_points(ex));
+                }
+                assert(!has_duplicate_points(expolygons));
+#endif // NDEBUG
                 //FIXME simplify
                 if (this_mode == MeshSlicingParams::SlicingMode::PositiveLargestContour)
                     keep_largest_contour_only(expolygons);
@@ -2047,6 +2067,16 @@ std::vector<ExPolygons> slice_mesh_ex(
                         append(simplified, ex.simplify(resolution));
                     expolygons = std::move(simplified);
                 }
+#if 0
+//#ifndef NDEBUG
+                for (const ExPolygon &ex : expolygons) {
+                    assert(! has_duplicate_points(ex.contour));
+                    for (const Polygon &hole : ex.holes)
+                        assert(! has_duplicate_points(hole));
+                    assert(! has_duplicate_points(ex));
+                }
+                assert(! has_duplicate_points(expolygons));
+#endif // NDEBUG
             }
         });
 //    BOOST_LOG_TRIVIAL(debug) << "slice_mesh make_expolygons in parallel - end";

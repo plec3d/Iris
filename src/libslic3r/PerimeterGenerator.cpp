@@ -362,7 +362,7 @@ static ExtrusionEntityCollection traverse_loops_classic(const PerimeterGenerator
                     }
                 });
         }
-
+       
         coll.append(ExtrusionLoop(std::move(paths), loop_role));
     }
     

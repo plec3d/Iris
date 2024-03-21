@@ -70,9 +70,11 @@ public:
 
 class TriangleSelectorMmGui : public TriangleSelectorGUI {
 public:
+    TriangleSelectorMmGui() = delete;
     // Plus 1 in the initialization of m_gizmo_scene is because the first position is allocated for non-painted triangles, and the indices above colors.size() are allocated for seed fill.
-    TriangleSelectorMmGui(const TriangleMesh& mesh, const std::vector<ColorRGBA>& colors, const ColorRGBA& default_volume_color)
+    explicit TriangleSelectorMmGui(const TriangleMesh& mesh, const std::vector<ColorRGBA>& colors, const ColorRGBA& default_volume_color)
         : TriangleSelectorGUI(mesh), m_colors(colors), m_default_volume_color(default_volume_color), m_gizmo_scene(2 * (colors.size() + 1)) {}
+
     ~TriangleSelectorMmGui() override = default;
 
     void render(ImGuiWrapper* imgui, const Transform3d& matrix) override;
@@ -158,6 +160,16 @@ private:
     // etc. When language changes, GUI is recreated and this class constructed again, so the change takes effect.
     std::map<std::string, wxString> m_desc;
 };
+
+std::vector<ColorRGBA> get_extruders_colors();
+
+inline size_t get_extruder_color_idx(const ModelVolume &model_volume, const int extruders_count)
+{
+    if (const int extruder_id = model_volume.extruder_id(); extruder_id <= 0 || extruder_id > extruders_count)
+        return 0;
+    else
+        return extruder_id - 1;
+}
 
 } // namespace Slic3r
 

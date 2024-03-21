@@ -148,6 +148,8 @@ set(SLIC3R_SOURCES
     Format/AnycubicSLA.cpp
     Format/STEP.hpp
     Format/STEP.cpp
+    Format/SVG.hpp
+    Format/SVG.cpp
     Format/SLAArchiveFormatRegistry.hpp
     Format/SLAArchiveFormatRegistry.cpp
     GCode/ThumbnailData.cpp
@@ -192,6 +194,8 @@ set(SLIC3R_SOURCES
     GCode/GCodeProcessor.hpp
     GCode/AvoidCrossingPerimeters.cpp
     GCode/AvoidCrossingPerimeters.hpp
+    GCode/Travels.cpp
+    GCode/Travels.hpp
     GCode.cpp
     GCode.hpp
     GCodeReader.cpp
@@ -213,6 +217,8 @@ set(SLIC3R_SOURCES
     Geometry/Voronoi.hpp
     Geometry/VoronoiOffset.cpp
     Geometry/VoronoiOffset.hpp
+    Geometry/VoronoiUtils.hpp
+    Geometry/VoronoiUtils.cpp
     Geometry/VoronoiVisualUtils.hpp
     Int128.hpp
     JumpPointSearch.cpp
@@ -220,6 +226,7 @@ set(SLIC3R_SOURCES
     KDTreeIndirect.hpp
     Layer.cpp
     Layer.hpp
+    LayerRegion.hpp
     LayerRegion.cpp
     libslic3r.h
     "${CMAKE_CURRENT_BINARY_DIR}/libslic3r_version.h"
@@ -298,10 +305,6 @@ set(SLIC3R_SOURCES
     MutablePriorityQueue.hpp
     NormalUtils.cpp
     NormalUtils.hpp
-    NonplanarFacet.cpp
-    NonplanarFacet.hpp
-    NonplanarSurface.cpp
-    NonplanarSurface.hpp
     NSVGUtils.cpp
     NSVGUtils.hpp
     ObjectID.cpp
@@ -467,7 +470,6 @@ set(SLIC3R_SOURCES
     BranchingTree/BranchingTree.hpp
     BranchingTree/PointCloud.cpp
     BranchingTree/PointCloud.hpp
-
     Arachne/BeadingStrategy/BeadingStrategy.hpp
     Arachne/BeadingStrategy/BeadingStrategy.cpp
     Arachne/BeadingStrategy/BeadingStrategyFactory.hpp
@@ -498,8 +500,9 @@ set(SLIC3R_SOURCES
     Arachne/utils/PolygonsSegmentIndex.hpp
     Arachne/utils/PolylineStitcher.hpp
     Arachne/utils/PolylineStitcher.cpp
-    Arachne/utils/VoronoiUtils.hpp
-    Arachne/utils/VoronoiUtils.cpp
+    Geometry/Voronoi.cpp
+    Geometry/VoronoiUtils.hpp
+    Geometry/VoronoiUtils.cpp
     Arachne/SkeletalTrapezoidation.hpp
     Arachne/SkeletalTrapezoidation.cpp
     Arachne/SkeletalTrapezoidationEdge.hpp

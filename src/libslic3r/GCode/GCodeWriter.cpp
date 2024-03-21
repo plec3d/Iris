@@ -13,13 +13,14 @@
 ///|/
 #include "GCodeWriter.hpp"
 #include "../CustomGCode.hpp"
-#include "../Color.hpp"
+
 #include <algorithm>
 #include <iomanip>
 #include <iostream>
 #include <map>
 #include <assert.h>
 #include <string_view>
+#include <boost/math/special_functions/pow.hpp>
 
 #ifdef __APPLE__
     #include <boost/spirit/include/karma.hpp>
@@ -325,15 +326,19 @@ std::string GCodeWriter::set_speed(double F, const std::string_view comment, con
     return w.string();
 }
 
-std::string GCodeWriter::travel_to_xy(const Vec2d &point, const std::string_view comment)
+std::string GCodeWriter::get_travel_to_xy_gcode(const Vec2d &point, const std::string_view comment) const
 {
-    m_pos.head<2>() = point.head<2>();
-    
     GCodeG1Formatter w;
     w.emit_xy(point);
     w.emit_f(this->config.travel_speed.value * 60.0);
     w.emit_comment(this->config.gcode_comments, comment);
     return w.string();
+}
+
+std::string GCodeWriter::travel_to_xy(const Vec2d &point, const std::string_view comment)
+{
+    m_pos.head<2>() = point.head<2>();
+    return this->get_travel_to_xy_gcode(point, comment);
 }
 
 std::string GCodeWriter::travel_to_xy_G2G3IJ(const Vec2d &point, const Vec2d &ij, const bool ccw, const std::string_view comment)
@@ -353,197 +358,62 @@ std::string GCodeWriter::travel_to_xy_G2G3IJ(const Vec2d &point, const Vec2d &ij
     return w.string();
 }
 
-std::string GCodeWriter::travel_to_xyz(const Vec3d &point, const std::string_view comment)
+std::string GCodeWriter::travel_to_xyz(const Vec3d& from, const Vec3d &to, const std::string_view comment)
 {
-    // FIXME: This function was not being used when travel_speed_z was separated (bd6badf).
-    // Calculation of feedrate was not updated accordingly. If you want to use
-    // this function, fix it first.
-    //std::terminate();
-
-    /*  If target Z is lower than current Z but higher than nominal Z we
-        don't perform the Z move but we only move in the XY plane and
-        adjust the nominal Z by reducing the lift amount that will be 
-        used for unlift. */
-        // BBS
-    Vec3d dest_point = point;
-    //BBS: a z_hop need to be handle when travel
-    if (std::abs(m_to_lift) > EPSILON) {
-        assert(std::abs(m_lifted) < EPSILON);
-        //BBS: don't need to do real lift if the current position is absolutely same with target.
-        //This ususally happens when the last extrusion line is short and the end of wipe position
-        //is same with the traget point by chance.
-        if ((!this->is_current_position_clear() || m_pos != dest_point) &&
-            m_to_lift + m_pos(2) > point(2)) {
-            m_lifted = m_to_lift + m_pos(2) - point(2);
-            dest_point(2) = m_to_lift + m_pos(2);
-        }
-        m_to_lift = 0.;
-
-        std::string slop_move;
-        //BBS: minus plate offset
-        Vec3d source = { m_pos(0) - m_x_offset, m_pos(1) - m_y_offset, m_pos(2) };
-        Vec3d target = { dest_point(0) - m_x_offset, dest_point(1) - m_y_offset, dest_point(2) };
-        Vec3d delta = target - source;
-        Vec2d delta_no_z = { delta(0), delta(1) };
-        //BBS: don'need slope travel because we don't know where is the source position the first time
-        //BBS: Also don't need to do slope move or spiral lift if x-y distance is absolute zero
-        if (this->is_current_position_clear() && delta(2) > 0 && delta_no_z.norm() != 0.0f) {
-            double radius = delta(2) / (2 * PI * atan(GCodeWriter::slope_threshold));
-            Vec2d ij_offset = radius * delta_no_z.normalized();
-            ij_offset = { -ij_offset(1), ij_offset(0) };
-            //BBS: SpiralLift
-            if (m_to_lift_type == LiftType::SpiralLift) {
-                //BBS: todo: check the arc move all in bed area, if not, then use lazy lift
-                slop_move = this->_spiral_travel_to_z(target(2), ij_offset, "spiral lift Z");
-            }
-            //BBS: LazyLift
-            else if (atan2(delta(2), delta_no_z.norm()) < GCodeWriter::slope_threshold) {
-                //check whether we can make a travel like
-                //   _____
-                //  /       to make the z list early to avoid to hit some warping place when travel is long.
-                Vec2d temp = delta_no_z.normalized() * delta(2) / tan(GCodeWriter::slope_threshold);
-                Vec3d slope_top_point = Vec3d(temp(0), temp(1), delta(2)) + source;
-                GCodeG1Formatter w0;
-                w0.emit_xyz(slope_top_point);
-                w0.emit_f(this->config.travel_speed.value * 60.0);
-                w0.emit_comment(this->config.gcode_comments, comment);
-                slop_move = w0.string();
-            }
-        }
-        m_pos = dest_point;
-        this->set_current_position_clear(true);
-        GCodeG1Formatter w1;
-        w1.emit_xyz(target);
-        w1.emit_f(this->config.travel_speed.value * 60.0);
-        w1.emit_comment(this->config.gcode_comments, comment);
-        return slop_move + w1.string();
+    if (std::abs(to.x() - m_pos.x()) < EPSILON && std::abs(to.y() - m_pos.y()) < EPSILON) {
+        return this->travel_to_z(to.z(), comment);
+    } else if (std::abs(to.z() - m_pos.z()) < EPSILON) {
+        return this->travel_to_xy(to.head<2>(), comment);
+    } else {
+        m_pos = to;
+        return this->get_travel_to_xyz_gcode(from, to, comment);
     }
-    else if (!this->will_move_z(point(2))) {
-        double nominal_z = m_pos(2) - m_lifted;
-        m_lifted -= (point(2) - nominal_z);
-        // In case that z_hop == layer_height we could end up with almost zero in_m_lifted
-        // and a retract could be skipped
-        if (std::abs(m_lifted) < EPSILON)
-            m_lifted = 0.;
-        //BBS
-        this->set_current_position_clear(true);
-        return this->travel_to_xy(to_2d(point));
-    }
-    else {
-        /*  In all the other cases, we perform an actual XYZ move and cancel
-            the lift. */
-        m_lifted = 0;
-        m_pos = point;
-    }
-    
-    //take plate offset into consider
-    this->set_current_position_clear(true);
-    Vec3d point_on_plate = { dest_point(0) - m_x_offset, dest_point(1) - m_y_offset, dest_point(2) };
-    m_pos = dest_point;
-
-    GCodeG1Formatter w;
-    w.emit_xyz(point_on_plate);
-    w.emit_f(this->config.travel_speed.value * 60.0);
-    w.emit_comment(this->config.gcode_comments, comment);
-    return w.string();
-}
-std::string GCodeWriter::_spiral_travel_to_z(double z, const Vec2d &ij_offset, const std::string &comment)
-{
-    m_pos(2) = z;
-
-    double speed = this->config.travel_speed_z.value;
-    if (speed == 0.)
-        speed = this->config.travel_speed.value;
-    
-    std::string output = "G17\n";
-    GCodeG2G3Formatter w(true);
-    w.emit_z(z);
-    w.emit_ij(ij_offset);
-    w.emit_string(" P1 ");
-    w.emit_f(speed * 60.0);
-    w.emit_comment(this->config.gcode_comments, comment);
-    return output + w.string();
 }
 
-/*std::string GCodeWriter::travel_to_xyz(const Vec3d &point, const std::string &comment)
-{
-    // FIXME: This function was not being used when travel_speed_z was separated (bd6badf).
-    // Calculation of feedrate was not updated accordingly. If you want to use
-    // this function, fix it first.
-    std::terminate();
-
-    /*  If target Z is lower than current Z but higher than nominal Z we
-        don't perform the Z move but we only move in the XY plane and
-        adjust the nominal Z by reducing the lift amount that will be 
-        used for unlift. 
-    if (!this->will_move_z(point.z())) {
-        double nominal_z = m_pos.z() - m_lifted;
-        m_lifted -= (point.z() - nominal_z);
-        // In case that retract_lift == layer_height we could end up with almost zero in_m_lifted
-        // and a retract could be skipped (https://github.com/prusa3d/PrusaSlicer/issues/2154
-        if (std::abs(m_lifted) < EPSILON)
-            m_lifted = 0.;
-        return this->travel_to_xy(to_2d(point));
-    }
-    
-    /*  In all the other cases, we perform an actual XYZ move and cancel
-        the lift. 
-    m_lifted = 0;
-    m_pos = point;
-    
+std::string GCodeWriter::get_travel_to_xyz_gcode(const Vec3d &from, const Vec3d &to, const std::string_view comment) const {
     GCodeG1Formatter w;
-    w.emit_xyz(point);
-    w.emit_f(this->config.travel_speed.value * 60.0);
+    w.emit_xyz(to);
+
+    double speed_z = this->config.travel_speed_z.value;
+    if (speed_z == 0.)
+        speed_z = this->config.travel_speed.value;
+
+    const double distance_xy{(to.head<2>() - from.head<2>()).norm()};
+    const double distnace_z{std::abs(to.z() - from.z())};
+    const double time_z = distnace_z / speed_z;
+    const double time_xy = distance_xy / this->config.travel_speed.value;
+    const double factor = time_z > 0 ? time_xy / time_z : 1;
+    if (factor < 1) {
+        w.emit_f((this->config.travel_speed.value * factor  + (1 - factor) * speed_z) * 60.0);
+    } else {
+        w.emit_f(this->config.travel_speed.value * 60.0);
+    }
+
     w.emit_comment(this->config.gcode_comments, comment);
     return w.string();
 }*/
 
 std::string GCodeWriter::travel_to_z(double z, const std::string_view comment)
 {
-    /*  If target Z is lower than current Z but higher than nominal Z
-        we don't perform the move but we only adjust the nominal Z by
-        reducing the lift amount that will be used for unlift. */
-    if (!this->will_move_z(z)) {
-        double nominal_z = m_pos.z() - m_lifted;
-        m_lifted -= (z - nominal_z);
-        if (std::abs(m_lifted) < EPSILON)
-            m_lifted = 0.;
-        return {};
+    if (std::abs(m_pos.z() - z) < EPSILON) {
+        return "";
+    } else {
+        m_pos.z() = z;
+        return this->get_travel_to_z_gcode(z, comment);
     }
-    
-    /*  In all the other cases, we perform an actual Z move and cancel
-        the lift. */
-    m_lifted = 0;
-    return this->_travel_to_z(z, comment);
 }
 
-std::string GCodeWriter::_travel_to_z(double z, const std::string_view comment)
+std::string GCodeWriter::get_travel_to_z_gcode(double z, const std::string_view comment) const
 {
-    m_pos.z() = z;
-
     double speed = this->config.travel_speed_z.value;
     if (speed == 0.)
         speed = this->config.travel_speed.value;
-    
+
     GCodeG1Formatter w;
     w.emit_z(z);
     w.emit_f(speed * 60.0);
     w.emit_comment(this->config.gcode_comments, comment);
     return w.string();
-}
-
-bool GCodeWriter::will_move_z(double z) const
-{
-    /* If target Z is lower than current Z but higher than nominal Z
-        we don't perform an actual Z move. */
-    if (m_lifted > 0) {
-        double nominal_z = m_pos.z() - m_lifted;
-        if (z <= m_pos.z())//if (z >= nominal_z && z <= m_pos.z())
-            return false;
-    }else if (std::abs(m_pos(2) - z) < EPSILON) {
-        return false;
-    }
-    return true;
 }
 
 std::string GCodeWriter::extrude_to_xy(const Vec2d &point, double dE, const std::string_view comment)
@@ -555,6 +425,26 @@ std::string GCodeWriter::extrude_to_xy(const Vec2d &point, double dE, const std:
 
     GCodeG1Formatter w;
     w.emit_xy(point);
+    w.emit_e(m_extrusion_axis, m_extruder->extrude(dE).second);
+    w.emit_comment(this->config.gcode_comments, comment);
+    return w.string();
+}
+
+std::string GCodeWriter::extrude_to_xy_G2G3IJ(const Vec2d &point, const Vec2d &ij, const bool ccw, double dE, const std::string_view comment)
+{
+    assert(std::abs(dE) < 1000.0);
+    assert(dE != 0);
+    assert(std::abs(point.x()) < 1200.);
+    assert(std::abs(point.y()) < 1200.);
+    assert(std::abs(ij.x()) < 1200.);
+    assert(std::abs(ij.y()) < 1200.);
+    assert(std::abs(ij.x()) >= 0.001 || std::abs(ij.y()) >= 0.001);
+
+    m_pos.head<2>() = point.head<2>();
+
+    GCodeG2G3Formatter w(ccw);
+    w.emit_xy(point);
+    w.emit_ij(ij);
     w.emit_e(m_extrusion_axis, m_extruder->extrude(dE).second);
     w.emit_comment(this->config.gcode_comments, comment);
     return w.string();
@@ -601,7 +491,7 @@ std::string GCodeWriter::retract(bool before_wipe)
     assert(factor >= 0. && factor <= 1. + EPSILON);
     return this->_retract(
         factor * m_extruder->retract_length(),
-        factor * m_extruder->retract_restart_extra(),
+        m_extruder->retract_restart_extra(),
         "retract"
     );
 }
@@ -612,7 +502,7 @@ std::string GCodeWriter::retract_for_toolchange(bool before_wipe)
     assert(factor >= 0. && factor <= 1. + EPSILON);
     return this->_retract(
         factor * m_extruder->retract_length_toolchange(),
-        factor * m_extruder->retract_restart_extra_toolchange(),
+        m_extruder->retract_restart_extra_toolchange(),
         "retract for toolchange"
     );
 }
@@ -679,70 +569,8 @@ std::string GCodeWriter::unretract()
     return gcode;
 }
 
-/*  If this method is called more than once before calling unlift(),
-    it will not perform subsequent lifts, even if Z was raised manually
-    (i.e. with travel_to_z()) and thus _lifted was reduced. */
-std::string GCodeWriter::lift(LiftType lift_type)
-{
-    // check whether the above/below conditions are met
-    double target_lift = 0;
-    {
-        double above = this->config.retract_lift_above.get_at(m_extruder->id());
-        double below = this->config.retract_lift_below.get_at(m_extruder->id());
-        if (m_pos.z() >= above && (below == 0 || m_pos.z() <= below))
-            target_lift = this->config.retract_lift.get_at(m_extruder->id());
-    }
-    // BBS
-    if (m_lifted == 0 && m_to_lift == 0 && target_lift > 0) {
-        if (lift_type == LiftType::LazyLift || lift_type == LiftType::SpiralLift) {
-            m_to_lift = target_lift;
-            m_to_lift_type = lift_type;
-        } else  {
-            m_lifted = target_lift;
-            return this->_travel_to_z(m_pos.z() + target_lift, "lift Z");
-        }
-    }
-    return {};
-}
-/*std::string GCodeWriter::lift()
-{
-    // check whether the above/below conditions are met
-    double target_lift = 0;
-    {
-        double above = this->config.retract_lift_above.get_at(m_extruder->id());
-        double below = this->config.retract_lift_below.get_at(m_extruder->id());
-        if (m_pos.z() >= above && (below == 0 || m_pos.z() <= below))
-            target_lift = this->config.retract_lift.get_at(m_extruder->id());
-    }
-    if (m_lifted == 0 && target_lift > 0) {
-        m_lifted = target_lift;
-        return this->_travel_to_z(m_pos.z() + target_lift, "lift Z");
-    }
-    return {};
-}*/
-
-
-std::string GCodeWriter::unlift()
-{
-    std::string gcode;
-    if (m_lifted > 0) {
-        gcode += this->_travel_to_z(m_pos.z() - m_lifted, "restore layer Z");
-        m_lifted = 0;
-    }
-    return gcode;
-}
-
 void GCodeWriter::update_position(const Vec3d &new_pos)
 {
-    assert(this->m_lifted >= 0);
-    const double nominal_z = m_pos.z() - m_lifted;
-    m_lifted = new_pos.z() - nominal_z;
-    if (m_lifted < - EPSILON)
-        throw Slic3r::RuntimeError("Custom G-code reports negative Z-hop. Final Z position is below the print_z height.");
-    // In case that retract_lift == layer_height we could end up with almost zero in_m_lifted
-    // and a retract could be skipped (https://github.com/prusa3d/PrusaSlicer/issues/2154
-    if (m_lifted < EPSILON)
-        m_lifted = 0.;
     m_pos = new_pos;
 }
 

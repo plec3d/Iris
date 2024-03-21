@@ -241,7 +241,7 @@ bool GCodeReader::GCodeLine::has(char axis) const
 }
 
 std::string_view GCodeReader::GCodeLine::axis_pos(char axis) const
-{
+{ 
     const std::string &s = this->raw();
     const char *c = GCodeReader::axis_pos(this->raw().c_str(), axis);
     return c ? std::string_view{ c, s.size() - (c - s.data()) } : std::string_view();

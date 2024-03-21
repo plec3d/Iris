@@ -110,7 +110,7 @@ ToolOrdering::ToolOrdering(const PrintObject &object, unsigned int first_extrude
     double max_layer_height = calc_max_layer_height(object.print()->config(), object.config().layer_height);
 
     // Collect extruders required to print the layers.
-    this->collect_extruders(object, std::vector<std::pair<double, unsigned int>>());
+    this->collect_extruders(object, std::vector<std::pair<double, unsigned int>>(), std::vector<std::pair<double, unsigned int>>());
 
     // Reorder the extruders to minimize tool switches.
     this->reorder_extruders(first_extruder);
@@ -156,17 +156,24 @@ ToolOrdering::ToolOrdering(const Print &print, unsigned int first_extruder, bool
 	// Use the extruder switches from Model::custom_gcode_per_print_z to override the extruder to print the object.
 	// Do it only if all the objects were configured to be printed with a single extruder.
 	std::vector<std::pair<double, unsigned int>> per_layer_extruder_switches;
-	if (auto num_extruders = unsigned(print.config().nozzle_diameter.size());
-		num_extruders > 1 && print.object_extruders().size() == 1 && // the current Print's configuration is CustomGCode::MultiAsSingle
+    auto num_extruders = unsigned(print.config().nozzle_diameter.size());
+	if (num_extruders > 1 && print.object_extruders().size() == 1 && // the current Print's configuration is CustomGCode::MultiAsSingle
 		print.model().custom_gcode_per_print_z.mode == CustomGCode::MultiAsSingle) {
 		// Printing a single extruder platter on a printer with more than 1 extruder (or single-extruder multi-material).
 		// There may be custom per-layer tool changes available at the model.
 		per_layer_extruder_switches = custom_tool_changes(print.model().custom_gcode_per_print_z, num_extruders);
 	}
 
-    // Collect extruders reuqired to print the layers.
+    // Color changes for each layer to determine which extruder needs to be picked before color change.
+    // This is done just for multi-extruder printers without enabled Single Extruder Multi Material (tool changer printers).
+    std::vector<std::pair<double, unsigned int>> per_layer_color_changes;
+    if (num_extruders > 1 && print.model().custom_gcode_per_print_z.mode == CustomGCode::MultiExtruder && !print.config().single_extruder_multi_material) {
+        per_layer_color_changes = custom_color_changes(print.model().custom_gcode_per_print_z, num_extruders);
+    }
+
+    // Collect extruders required to print the layers.
     for (auto object : print.objects())
-        this->collect_extruders(*object, per_layer_extruder_switches);
+        this->collect_extruders(*object, per_layer_extruder_switches, per_layer_color_changes);
 
     // Reorder the extruders to minimize tool switches.
     this->reorder_extruders(first_extruder);
@@ -220,8 +227,11 @@ void ToolOrdering::initialize_layers(std::vector<coordf_t> &zs)
 }
 
 // Collect extruders reuqired to print layers.
-void ToolOrdering::collect_extruders(const PrintObject &object, const std::vector<std::pair<double, unsigned int>> &per_layer_extruder_switches)
-{
+void ToolOrdering::collect_extruders(
+    const PrintObject                                  &object,
+    const std::vector<std::pair<double, unsigned int>> &per_layer_extruder_switches,
+    const std::vector<std::pair<double, unsigned int>> &per_layer_color_changes
+) {
     // Collect the support extruders.
     for (auto support_layer : object.support_layers()) {
         LayerTools   &layer_tools = this->tools_for_layer(support_layer->print_z);
@@ -239,9 +249,10 @@ void ToolOrdering::collect_extruders(const PrintObject &object, const std::vecto
     }
 
     // Extruder overrides are ordered by print_z.
-    std::vector<std::pair<double, unsigned int>>::const_iterator it_per_layer_extruder_override;
-	it_per_layer_extruder_override = per_layer_extruder_switches.begin();
+    std::vector<std::pair<double, unsigned int>>::const_iterator it_per_layer_extruder_override = per_layer_extruder_switches.begin();
     unsigned int extruder_override = 0;
+
+    std::vector<std::pair<double, unsigned int>>::const_iterator it_per_layer_color_changes = per_layer_color_changes.begin();
 
     // Collect the object extruders.
     for (auto layer : object.layers()) {
@@ -253,6 +264,15 @@ void ToolOrdering::collect_extruders(const PrintObject &object, const std::vecto
 
         // Store the current extruder override (set to zero if no overriden), so that layer_tools.wiping_extrusions().is_overridable_and_mark() will use it.
         layer_tools.extruder_override = extruder_override;
+
+        // Append the extruder needed to be picked before performing the color change.
+        for (; it_per_layer_color_changes != per_layer_color_changes.end() && it_per_layer_color_changes->first < layer->print_z + EPSILON; ++it_per_layer_color_changes) {
+            if (std::abs(it_per_layer_color_changes->first - layer->print_z) < EPSILON) {
+                assert(layer_tools.extruder_needed_for_color_changer == 0); // Just on color change per layer is allowed.
+                layer_tools.extruder_needed_for_color_changer = it_per_layer_color_changes->second;
+                layer_tools.extruders.emplace_back(it_per_layer_color_changes->second);
+            }
+        }
 
         // What extruders are required to print this object layer?
         for (const LayerRegion *layerm : layer->regions()) {
@@ -371,6 +391,11 @@ void ToolOrdering::reorder_extruders(unsigned int last_extruder_id)
                         std::swap(lt.extruders[i], lt.extruders.front());
                         break;
                     }
+            } else if (lt.extruder_needed_for_color_changer != 0) {
+                // Put the extruder needed for performing the color change at the beginning.
+                auto it = std::find(lt.extruders.begin(), lt.extruders.end(), lt.extruder_needed_for_color_changer);
+                assert(it != lt.extruders.end());
+                std::rotate(lt.extruders.begin(), it, it + 1);
             }
         }
         last_extruder_id = lt.extruders.back();
@@ -525,6 +550,9 @@ void ToolOrdering::fill_wipe_tower_partitions(const PrintConfig &config, coordf_
 
 bool ToolOrdering::insert_wipe_tower_extruder()
 {
+    if (!m_print_config_ptr->wipe_tower)
+        return false;
+
     // In case that wipe_tower_extruder is set to non-zero, we must make sure that the extruder will be in the list.
     bool changed = false;
     if (m_print_config_ptr->wipe_tower_extruder != 0) {
@@ -880,6 +908,22 @@ void WipingExtrusions::ensure_perimeters_infills_order(const Print& print, const
             }
         }
     }
+}
+
+
+int ToolOrdering::toolchanges_count() const
+{
+    std::vector<unsigned int> tools_in_order;
+    for (const LayerTools& lt : m_layer_tools)
+        tools_in_order.insert(tools_in_order.end(), lt.extruders.begin(), lt.extruders.end());
+    assert(std::find(tools_in_order.begin(), tools_in_order.end(), (unsigned int)(-1)) == tools_in_order.end());
+    for (size_t i=1; i<tools_in_order.size(); ++i)
+        if (tools_in_order[i] == tools_in_order[i-1])
+            tools_in_order[i-1] = (unsigned int)(-1);
+    tools_in_order.erase(std::remove(tools_in_order.begin(), tools_in_order.end(), (unsigned int)(-1)), tools_in_order.end());
+    if (tools_in_order.size() > 1 && tools_in_order.back() == tools_in_order[tools_in_order.size()-2])
+        tools_in_order.pop_back();
+    return std::max(0, int(tools_in_order.size())-1); // 5 tools = 4 toolchanges
 }
 
 } // namespace Slic3r

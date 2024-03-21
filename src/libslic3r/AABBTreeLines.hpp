@@ -153,7 +153,7 @@ inline void insert_intersections_with_line(std::vector<std::pair<VectorType, siz
         insert_intersections_with_line<LineType, TreeType, VectorType>(result, right_node_idx, tree, lines, line, line_bb);
     }
 
-    //// NOTE: Non recursive implementation - for my case was slower ;-(
+    //// NOTE: Non recursive implementation - for my case was slower ;-(     
     // std::vector<size_t> node_indicies_for_check; // evaluation queue
     // size_t approx_size = static_cast<size_t>(std::ceil(std::sqrt(tree.nodes().size())));
     // node_indicies_for_check.reserve(approx_size);

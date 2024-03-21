@@ -23,7 +23,7 @@ public:
     bool defined;
     
     BoundingBoxBase() : min(PointType::Zero()), max(PointType::Zero()), defined(false) {}
-    BoundingBoxBase(const PointType &pmin, const PointType &pmax) :
+    BoundingBoxBase(const PointType &pmin, const PointType &pmax) : 
         min(pmin), max(pmax), defined(pmin.x() < pmax.x() && pmin.y() < pmax.y()) {}
     BoundingBoxBase(const PointType &p1, const PointType &p2, const PointType &p3) :
         min(p1), max(p1), defined(false) { merge(p2); merge(p3); }
@@ -96,8 +96,8 @@ public:
     using PointsType = std::vector<PointType>;
 
     BoundingBox3Base() : BoundingBoxBase<PointType>() {}
-    BoundingBox3Base(const PointType &pmin, const PointType &pmax) :
-        BoundingBoxBase<PointType>(pmin, pmax)
+    BoundingBox3Base(const PointType &pmin, const PointType &pmax) : 
+        BoundingBoxBase<PointType>(pmin, pmax) 
         { if (pmin.z() >= pmax.z()) BoundingBoxBase<PointType>::defined = false; }
     BoundingBox3Base(const PointType &p1, const PointType &p2, const PointType &p3) :
         BoundingBoxBase<PointType>(p1, p1) { merge(p2); merge(p3); }
@@ -146,6 +146,16 @@ public:
     bool intersects(const BoundingBox3Base<PointType>& other) const {
         return this->min.x() < other.max.x() && this->max.x() > other.min.x() && this->min.y() < other.max.y() && this->max.y() > other.min.y() && 
             this->min.z() < other.max.z() && this->max.z() > other.min.z();
+    }
+
+    // Shares some boundary.
+    bool shares_boundary(const BoundingBox3Base<PointType>& other) const {
+        return is_approx(this->min.x(), other.max.x()) ||
+               is_approx(this->max.x(), other.min.x()) ||
+               is_approx(this->min.y(), other.max.y()) ||
+               is_approx(this->max.y(), other.min.y()) ||
+               is_approx(this->min.z(), other.max.z()) ||
+               is_approx(this->max.z(), other.min.z());
     }
 };
 

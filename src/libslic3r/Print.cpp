@@ -86,6 +86,7 @@ bool Print::invalidate_state_by_config_options(const ConfigOptionResolver & /* n
         "bed_temperature",
         "before_layer_gcode",
         "between_objects_gcode",
+        "binary_gcode",
         "bridge_acceleration",
         "bridge_fan_speed",
         "enable_dynamic_fan_speeds",
@@ -142,6 +143,11 @@ bool Print::invalidate_state_by_config_options(const ConfigOptionResolver & /* n
         "gcode_substitutions",
         "gcode_binary",
         "printer_notes",
+        "travel_ramping_lift",
+        "travel_initial_part_length",
+        "travel_slope",
+        "travel_max_lift",
+        "travel_lift_before_obstacle",
         "retract_before_travel",
         "retract_before_wipe",
         "retract_layer_change",
@@ -168,7 +174,8 @@ bool Print::invalidate_state_by_config_options(const ConfigOptionResolver & /* n
         "use_relative_e_distances",
         "use_volumetric_e",
         "variable_layer_height",
-        "wipe"
+        "wipe",
+        "wipe_tower_acceleration"
     };
 
     static std::unordered_set<std::string> steps_ignore;
@@ -214,9 +221,12 @@ bool Print::invalidate_state_by_config_options(const ConfigOptionResolver & /* n
             || opt_key == "filament_unloading_speed_start"
             || opt_key == "filament_toolchange_delay"
             || opt_key == "filament_cooling_moves"
+            || opt_key == "filament_stamping_loading_speed"
+            || opt_key == "filament_stamping_distance"
             || opt_key == "filament_minimal_purge_on_wipe_tower"
             || opt_key == "filament_cooling_initial_speed"
             || opt_key == "filament_cooling_final_speed"
+            || opt_key == "filament_purge_multiplier"
             || opt_key == "filament_ramming_parameters"
             || opt_key == "filament_multitool_ramming"
             || opt_key == "filament_multitool_ramming_volume"
@@ -234,13 +244,16 @@ bool Print::invalidate_state_by_config_options(const ConfigOptionResolver & /* n
             || opt_key == "wipe_tower_cone_angle"
             || opt_key == "wipe_tower_bridging"
             || opt_key == "wipe_tower_extra_spacing"
+            || opt_key == "wipe_tower_extra_flow"
             || opt_key == "wipe_tower_no_sparse_layers"
             || opt_key == "wipe_tower_extruder"
             || opt_key == "wiping_volumes_matrix"
+            || opt_key == "wiping_volumes_use_custom_matrix"
             || opt_key == "parking_pos_retraction"
             || opt_key == "cooling_tube_retraction"
             || opt_key == "cooling_tube_length"
             || opt_key == "extra_loading_move"
+            || opt_key == "multimaterial_purging"
             || opt_key == "travel_speed"
             || opt_key == "travel_speed_z"
             || opt_key == "first_layer_speed"
@@ -418,54 +431,58 @@ bool Print::sequential_print_horizontal_clearance_valid(const Print& print, Poly
         polygons->clear();
     std::vector<size_t> intersecting_idxs;
 
-	std::map<ObjectID, Polygon> map_model_object_to_convex_hull;
-	for (const PrintObject *print_object : print.objects()) {
-	    assert(! print_object->model_object()->instances.empty());
-	    assert(! print_object->instances().empty());
-	    ObjectID model_object_id = print_object->model_object()->id();
-	    auto it_convex_hull = map_model_object_to_convex_hull.find(model_object_id);
+	  std::map<ObjectID, Polygon> map_model_object_to_convex_hull;
+	  for (const PrintObject *print_object : print.objects()) {
+	      assert(! print_object->model_object()->instances.empty());
+	      assert(! print_object->instances().empty());
+	      ObjectID model_object_id = print_object->model_object()->id();
+	      auto it_convex_hull = map_model_object_to_convex_hull.find(model_object_id);
         // Get convex hull of all printable volumes assigned to this print object.
         ModelInstance *model_instance0 = print_object->model_object()->instances.front();
-	    if (it_convex_hull == map_model_object_to_convex_hull.end()) {
-	        // Calculate the convex hull of a printable object. 
-	        // Grow convex hull with the clearance margin.
-	        // FIXME: Arrangement has different parameters for offsetting (jtMiter, limit 2)
-	        // which causes that the warning will be showed after arrangement with the
-	        // appropriate object distance. Even if I set this to jtMiter the warning still shows up.
-        Geometry::Transformation trafo = model_instance0->get_transformation();
-        trafo.set_offset({ 0.0, 0.0, model_instance0->get_offset().z() });
-          it_convex_hull = map_model_object_to_convex_hull.emplace_hint(it_convex_hull, model_object_id,
-              offset(print_object->model_object()->convex_hull_2d(trafo.get_matrix()),
-                  // Shrink the extruder_clearance_radius a tiny bit, so that if the object arrangement algorithm placed the objects
-                  // exactly by satisfying the extruder_clearance_radius, this test will not trigger collision.
-                  float(scale_(0.5 * print.config().extruder_clearance_radius.value - BuildVolume::BedEpsilon)),
-                  jtRound, scale_(0.1)).front());
-      }
-	    // Make a copy, so it may be rotated for instances.
-	    Polygon convex_hull0 = it_convex_hull->second;
-		const double z_diff = Geometry::rotation_diff_z(model_instance0->get_matrix(), print_object->instances().front().model_instance->get_matrix());
-		if (std::abs(z_diff) > EPSILON)
-			convex_hull0.rotate(z_diff);
-	    // Now we check that no instance of convex_hull intersects any of the previously checked object instances.
-	    for (const PrintInstance &instance : print_object->instances()) {
-	        Polygon convex_hull = convex_hull0;
-	        // instance.shift is a position of a centered object, while model object may not be centered.
-	        // Convert the shift from the PrintObject's coordinates into ModelObject's coordinates by removing the centering offset.
-	        convex_hull.translate(instance.shift - print_object->center_offset());
-            // if output needed, collect indices (inside convex_hulls_other) of intersecting hulls
-            for (size_t i = 0; i < convex_hulls_other.size(); ++i) {
-                if (! intersection(convex_hulls_other[i], convex_hull).empty()) {
-                    if (polygons == nullptr)
-                        return false;
-                    else {
-                        intersecting_idxs.emplace_back(i);
-                        intersecting_idxs.emplace_back(convex_hulls_other.size());
+	      if (it_convex_hull == map_model_object_to_convex_hull.end()) {
+	          // Calculate the convex hull of a printable object. 
+	          // Grow convex hull with the clearance margin.
+	          // FIXME: Arrangement has different parameters for offsetting (jtMiter, limit 2)
+	          // which causes that the warning will be showed after arrangement with the
+	          // appropriate object distance. Even if I set this to jtMiter the warning still shows up.
+            Geometry::Transformation trafo = model_instance0->get_transformation();
+            trafo.set_offset({ 0.0, 0.0, model_instance0->get_offset().z() });
+            Polygon ch2d = print_object->model_object()->convex_hull_2d(trafo.get_matrix());
+            Polygons offs_ch2d = offset(ch2d,
+                // Shrink the extruder_clearance_radius a tiny bit, so that if the object arrangement algorithm placed the objects
+                // exactly by satisfying the extruder_clearance_radius, this test will not trigger collision.
+                float(scale_(0.5 * print.config().extruder_clearance_radius.value - BuildVolume::BedEpsilon)), jtRound, scale_(0.1));
+            // for invalid geometries the vector returned by offset() may be empty
+            if (!offs_ch2d.empty())
+                it_convex_hull = map_model_object_to_convex_hull.emplace_hint(it_convex_hull, model_object_id, offs_ch2d.front());
+        }
+        if (it_convex_hull != map_model_object_to_convex_hull.end()) {
+            // Make a copy, so it may be rotated for instances.
+            Polygon convex_hull0 = it_convex_hull->second;
+            const double z_diff = Geometry::rotation_diff_z(model_instance0->get_matrix(), print_object->instances().front().model_instance->get_matrix());
+            if (std::abs(z_diff) > EPSILON)
+                convex_hull0.rotate(z_diff);
+            // Now we check that no instance of convex_hull intersects any of the previously checked object instances.
+            for (const PrintInstance& instance : print_object->instances()) {
+                Polygon convex_hull = convex_hull0;
+                // instance.shift is a position of a centered object, while model object may not be centered.
+                // Convert the shift from the PrintObject's coordinates into ModelObject's coordinates by removing the centering offset.
+                convex_hull.translate(instance.shift - print_object->center_offset());
+                // if output needed, collect indices (inside convex_hulls_other) of intersecting hulls
+                for (size_t i = 0; i < convex_hulls_other.size(); ++i) {
+                    if (!intersection(convex_hulls_other[i], convex_hull).empty()) {
+                        if (polygons == nullptr)
+                            return false;
+                        else {
+                            intersecting_idxs.emplace_back(i);
+                            intersecting_idxs.emplace_back(convex_hulls_other.size());
+                        }
                     }
                 }
+                convex_hulls_other.emplace_back(std::move(convex_hull));
             }
-            convex_hulls_other.emplace_back(std::move(convex_hull));
-	    }
-	}
+        }
+    }
 
     if (!intersecting_idxs.empty()) {
         // use collected indices (inside convex_hulls_other) to update output
@@ -1047,7 +1064,7 @@ std::string Print::export_gcode(const std::string& path_template, GCodeProcessor
     this->set_status(90, message);
 
     // Create GCode on heap, it has quite a lot of data.
-    std::unique_ptr<GCodeGenerator> gcode(new GCodeGenerator);
+    std::unique_ptr<GCodeGenerator> gcode(new GCodeGenerator(const_cast<const Print*>(this)));
     gcode->do_export(this, path.c_str(), result, thumbnail_cb);
 
     if (m_conflict_result.has_value())
@@ -1573,7 +1590,7 @@ void Print::_make_wipe_tower()
     m_wipe_tower_data.final_purge = Slic3r::make_unique<WipeTower::ToolChangeResult>(
         wipe_tower.tool_change((unsigned int)(-1)));
 
-    m_wipe_tower_data.used_filament = wipe_tower.get_used_filament();
+    m_wipe_tower_data.used_filament_until_layer = wipe_tower.get_used_filament_until_layer();
     m_wipe_tower_data.number_of_toolchanges = wipe_tower.get_number_of_toolchanges();
     m_wipe_tower_data.width = wipe_tower.width();
     m_wipe_tower_data.first_layer_height = config().first_layer_height;
@@ -1590,7 +1607,15 @@ std::string Print::output_filename(const std::string &filename_base) const
     DynamicConfig config = this->finished() ? this->print_statistics().config() : this->print_statistics().placeholders();
     config.set_key_value("num_extruders", new ConfigOptionInt((int)m_config.nozzle_diameter.size()));
     config.set_key_value("default_output_extension", new ConfigOptionString(".gcode"));
-    return this->PrintBase::output_filename(m_config.output_filename_format.value, ".gcode", filename_base, &config);
+
+    // Handle output_filename_format. There is a hack related to binary G-codes: gcode / bgcode substitution.
+    std::string output_filename_format = m_config.output_filename_format.value;
+    if (m_config.binary_gcode && boost::iends_with(output_filename_format, ".gcode"))
+        output_filename_format.insert(output_filename_format.end()-5, 'b');
+    if (! m_config.binary_gcode && boost::iends_with(output_filename_format, ".bgcode"))
+        output_filename_format.erase(output_filename_format.end()-6);
+
+    return this->PrintBase::output_filename(output_filename_format, ".gcode", filename_base, &config);
 }
 
 const std::string PrintStatistics::FilamentUsedG     = "filament used [g]";
@@ -1612,6 +1637,11 @@ const std::string PrintStatistics::FilamentCostMask = "; filament cost =";
 const std::string PrintStatistics::TotalFilamentCost          = "total filament cost";
 const std::string PrintStatistics::TotalFilamentCostMask      = "; total filament cost =";
 const std::string PrintStatistics::TotalFilamentCostValueMask = "; total filament cost = %.2lf\n";
+
+const std::string PrintStatistics::TotalFilamentUsedWipeTower     = "total filament used for wipe tower [g]";
+const std::string PrintStatistics::TotalFilamentUsedWipeTowerValueMask = "; total filament used for wipe tower [g] = %.2lf\n";
+
+
 
 DynamicConfig PrintStatistics::config() const
 {

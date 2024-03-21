@@ -205,9 +205,11 @@ wxString Field::get_tooltip_text(const wxString& default_string)
         opt_id += "]";
     }
 
+    bool newline_after_name = boost::iends_with(opt_id, "_gcode") && opt_id != "binary_gcode";
+
 	return from_u8(m_opt.tooltip) + "\n" + _L("default value") + "\t: " +
-        (boost::iends_with(opt_id, "_gcode") ? "\n" : "") + default_string +
-        (boost::iends_with(opt_id, "_gcode") ? "" : "\n") +
+        (newline_after_name ? "\n" : "") + default_string +
+        (newline_after_name ? "" : "\n") +
         _L("parameter name") + "\t: " + opt_id;
 }
 
@@ -684,7 +686,7 @@ wxWindow* CheckBox::GetNewWin(wxWindow* parent, const wxString& label /*= wxEmpt
 {
     if (wxGetApp().suppress_round_corners())
         return new ::CheckBox(parent, label);
-
+    
     return new ::SwitchButton(parent, label);
 }
 
@@ -740,9 +742,9 @@ bool CheckBox::GetValue()
 
 void CheckBox::BUILD() {
 	auto size = wxSize(wxDefaultSize);
-	if (m_opt.height >= 0)
+	if (m_opt.height >= 0) 
         size.SetHeight(m_opt.height*m_em_unit);
-	if (m_opt.width >= 0)
+	if (m_opt.width >= 0) 
         size.SetWidth(m_opt.width*m_em_unit);
 
 	bool check_value =	m_opt.type == coBool ?
@@ -756,9 +758,9 @@ void CheckBox::BUILD() {
     window = GetNewWin(m_parent);
     wxGetApp().UpdateDarkUI(window);
 	window->SetFont(wxGetApp().normal_font());
-	if (!wxOSX)
+	if (!wxOSX) 
         window->SetBackgroundStyle(wxBG_STYLE_PAINT);
-	if (m_opt.readonly)
+	if (m_opt.readonly) 
         window->Disable();
 
 	SetValue(check_value);
@@ -854,6 +856,7 @@ void SpinCtrl::BUILD() {
 	switch (m_opt.type) {
 	case coInt:
 		default_value = m_opt.default_value->getInt();
+        m_last_meaningful_value = default_value;
 		break;
 	case coInts:
 	{
@@ -873,16 +876,7 @@ void SpinCtrl::BUILD() {
     if (default_value != UNDEF_VALUE)
         text_value = wxString::Format(_T("%i"), default_value);
 
-    const int min_val = m_opt.min == -FLT_MAX
-#ifdef __WXOSX__
-    // We will forcibly set the input value for SpinControl, since the value
-    // inserted from the keyboard is not updated under OSX.
-    // So, we can't set min control value bigger then 0.
-    // Otherwise, it couldn't be possible to input from keyboard value
-    // less then min_val.
-    || m_opt.min > 0
-#endif
-    ? (int)0 : (int)m_opt.min;
+    const int min_val = m_opt.min == -FLT_MAX ? (int)0 : (int)m_opt.min;
 	const int max_val = m_opt.max < FLT_MAX ? (int)m_opt.max : INT_MAX;
 
 	auto temp = new ::SpinInput(m_parent, text_value, "", wxDefaultPosition, size,
@@ -1003,14 +997,6 @@ void SpinCtrl::propagate_value()
     if (tmp_value == UNDEF_VALUE) {
         on_kill_focus();
     } else {
-#ifdef __WXOSX__
-        // check input value for minimum
-        if (m_opt.min > 0 && tmp_value < m_opt.min) {
-            ::SpinInput* spin = static_cast<::SpinInput*>(window);
-            spin->SetValue(m_opt.min);
-            spin->GetText()->SetInsertionPointEnd();
-        }
-#endif
         on_change_field();
     }
 }

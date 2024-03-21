@@ -16,8 +16,7 @@
 
 namespace Slic3r {
 
-struct EmbossProjection
-{
+struct EmbossProjection{
     // Emboss depth, Size in local Z direction
     double depth = 1.; // [in loacal mm] 
     // NOTE: User should see and modify mainly world size not local
@@ -25,28 +24,19 @@ struct EmbossProjection
     // Flag that result volume use surface cutted from source objects
     bool use_surface = false;
 
-    // enum class Align {
-    //     left,
-    //     right,
-    //     center,
-    //     top_left,
-    //     top_right,
-    //     top_center,
-    //     bottom_left,
-    //     bottom_right,
-    //     bottom_center
-    // };
-    //// change pivot of volume
-    //// When not set, center is used and is not stored
-    // std::optional<Align> align;
-
-    // compare TextStyle
     bool operator==(const EmbossProjection &other) const {
         return depth == other.depth && use_surface == other.use_surface;
     }
 
     // undo / redo stack recovery
     template<class Archive> void serialize(Archive &ar) { ar(depth, use_surface); }
+};
+
+// Extend expolygons with information whether it was successfull healed
+struct HealedExPolygons{
+    ExPolygons expolygons;
+    bool is_healed;
+    operator ExPolygons&() { return expolygons; }
 };
 
 // Help structure to identify expolygons grups
@@ -74,6 +64,12 @@ struct EmbossShape
 {
     // shapes to to emboss separately over surface
     ExPolygonsWithIds shapes_with_ids;
+
+    // Only cache for final shape
+    // It is calculated from ExPolygonsWithIds
+    // Flag is_healed --> whether union of shapes is healed
+    // Healed mean without selfintersection and point duplication
+    HealedExPolygons final_shape;
 
     // scale of shape, multiplier to get 3d point in mm from integer shape
     double scale = SCALING_FACTOR;
@@ -104,31 +100,44 @@ struct EmbossShape
 
         // Loaded string data from file
         std::shared_ptr<std::string> file_data = nullptr;
-    };    
-    SvgFile svg_file;
 
-    // flag whether during cration of union expolygon final shape was fully correct
-    // correct mean without selfintersection and duplicate(double) points
-    bool is_healed = true;
+        template<class Archive> void save(Archive &ar) const {
+            // Note: image is only cache it is not neccessary to store
+
+            // Store file data as plain string
+            // For Embossed text file_data are nullptr
+            ar(path, path_in_3mf, (file_data != nullptr) ? *file_data : std::string(""));
+        }
+        template<class Archive> void load(Archive &ar) {
+            // for restore shared pointer on file data
+            std::string file_data_str;
+            ar(path, path_in_3mf, file_data_str);
+            if (!file_data_str.empty())
+                file_data = std::make_unique<std::string>(file_data_str);
+        }
+    };
+    // When embossing shape is made by svg file this is source data
+    std::optional<SvgFile> svg_file;
 
     // undo / redo stack recovery
     template<class Archive> void save(Archive &ar) const
     {
-        ar(shapes_with_ids, scale, projection, svg_file.path, svg_file.path_in_3mf);
+        // final_shape is not neccessary to store - it is only cache
+        ar(shapes_with_ids, final_shape, scale, projection, svg_file);
         cereal::save(ar, fix_3mf_tr);
     }
     template<class Archive> void load(Archive &ar)
     {
-        ar(shapes_with_ids, scale, projection, svg_file.path, svg_file.path_in_3mf);
+        ar(shapes_with_ids, final_shape, scale, projection, svg_file);
         cereal::load(ar, fix_3mf_tr);
     }
 };
-
 } // namespace Slic3r
 
 // Serialization through the Cereal library
 namespace cereal {
-template<class Archive> void serialize(Archive &ar, Slic3r::ExPolygonsWithId &o) { ar(o.id, o.expoly); }
+template<class Archive> void serialize(Archive &ar, Slic3r::ExPolygonsWithId &o) { ar(o.id, o.expoly, o.is_healed); }
+template<class Archive> void serialize(Archive &ar, Slic3r::HealedExPolygons &o) { ar(o.expolygons, o.is_healed); }
 }; // namespace cereal
 
 #endif // slic3r_EmbossShape_hpp_

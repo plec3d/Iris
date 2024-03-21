@@ -30,7 +30,7 @@ public:
 
     DropDown & GetDropDown() { return drop; }
 
-    virtual bool SetFont(wxFont const & font) override;
+    bool SetFont(wxFont const & font) override;
 
     bool SetBackgroundColour(const wxColour& colour) override;
     bool SetForegroundColour(const wxColour& colour) override;
@@ -38,7 +38,6 @@ public:
     void SetBorderColor(StateColor const& color);
 
     int Append(const wxString &item, const wxBitmapBundle &bitmap = wxNullBitmap);
-
     int Append(const wxString &item, const wxBitmapBundle &bitmap, void *clientData);
 
     int Insert(const wxString& item, const wxBitmapBundle& bitmap, unsigned int pos);
@@ -67,12 +66,14 @@ public:
 
     wxBitmap GetItemBitmap(unsigned int n);
 
+    void     OnKeyDown(wxKeyEvent& event);
+
 protected:
     virtual int  DoInsertItems(const wxArrayStringsAdapter &items,
                                unsigned int                 pos,
                                void **                      clientData,
                                wxClientDataType             type) override;
-    virtual void DoClear() override;
+    void DoClear() override;
 
     void DoDeleteOneItem(unsigned int pos) override;
 

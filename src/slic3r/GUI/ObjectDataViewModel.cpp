@@ -364,8 +364,8 @@ void ObjectDataViewModel::UpdateBitmapForNode(ObjectDataViewModelNode* node)
 
     if (!node->has_warning_icon() && !node->has_lock()) {
         node->SetBitmap(is_volume_node ? (
-            node->is_text_volume() ? *m_text_volume_bmps.at(vol_type) :
-            node->is_svg_volume() ? *m_svg_volume_bmps.at(vol_type) :
+            node->is_text_volume() ? *m_text_volume_bmps.at(vol_type) : 
+            node->is_svg_volume() ? *m_svg_volume_bmps.at(vol_type) : 
             *m_volume_bmps.at(vol_type)) : m_empty_bmp);
         return;
     }
@@ -389,7 +389,7 @@ void ObjectDataViewModel::UpdateBitmapForNode(ObjectDataViewModelNode* node)
         if (is_volume_node)
             bmps.emplace_back(
                 node->is_text_volume() ? m_text_volume_bmps[vol_type] :
-                node->is_svg_volume() ? m_svg_volume_bmps[vol_type] :
+                node->is_svg_volume() ? m_svg_volume_bmps[vol_type] : 
                 m_volume_bmps[vol_type]);
         bmp = m_bitmap_cache->insert_bndl(scaled_bitmap_name, bmps);
     }

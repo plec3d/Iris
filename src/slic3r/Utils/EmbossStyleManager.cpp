@@ -14,6 +14,9 @@
 #include "slic3r/GUI/Jobs/CreateFontStyleImagesJob.hpp"
 #include "slic3r/GUI/ImGuiWrapper.hpp" // check of font ranges
 
+#include <boost/assign.hpp>
+#include <boost/bimap.hpp>
+
 using namespace Slic3r;
 using namespace Slic3r::Emboss;
 using namespace Slic3r::GUI::Emboss;
@@ -38,6 +41,20 @@ void                    store_style_index(AppConfig &cfg, size_t index);
 StyleManager::Styles load_styles(const AppConfig &cfg);
 void store_styles(AppConfig &cfg, const StyleManager::Styles &styles);
 void make_unique_name(const StyleManager::Styles &styles, std::string &name);
+
+// Enum map to string and vice versa
+using HorizontalAlignToName = boost::bimap<FontProp::HorizontalAlign, std::string_view>;
+const HorizontalAlignToName horizontal_align_to_name = 
+boost::assign::list_of<HorizontalAlignToName::relation>
+    (FontProp::HorizontalAlign::left, "left")
+    (FontProp::HorizontalAlign::center, "center")
+    (FontProp::HorizontalAlign::right, "right");
+using VerticalAlignToName = boost::bimap<FontProp::VerticalAlign, std::string_view>;
+const VerticalAlignToName vertical_align_to_name =
+boost::assign::list_of<VerticalAlignToName::relation>
+    (FontProp::VerticalAlign::top, "top")
+    (FontProp::VerticalAlign::center, "middle")
+    (FontProp::VerticalAlign::bottom, "bottom");
 } // namespace
 
 void StyleManager::init(AppConfig *app_config)
@@ -56,7 +73,7 @@ void StyleManager::init(AppConfig *app_config)
     }
 
     std::optional<size_t> active_index_opt = (app_config != nullptr) ? 
-        ::load_style_index(*app_config) :
+        ::load_style_index(*app_config) : 
         std::optional<size_t>{};
 
     size_t active_index = 0;
@@ -115,7 +132,7 @@ void StyleManager::add_style(const std::string &name) {
 }
 
 void StyleManager::swap(size_t i1, size_t i2) {
-    if (i1 >= m_styles.size() ||
+    if (i1 >= m_styles.size() || 
         i2 >= m_styles.size()) return;
     std::swap(m_styles[i1], m_styles[i2]);
     // fix selected index
@@ -535,6 +552,9 @@ const std::string APP_CONFIG_FONT_DESCRIPTOR  = "descriptor";
 const std::string APP_CONFIG_FONT_LINE_HEIGHT = "line_height";
 const std::string APP_CONFIG_FONT_DEPTH       = "depth";
 const std::string APP_CONFIG_FONT_USE_SURFACE = "use_surface";
+const std::string APP_CONFIG_PER_GLYPH        = "per_glyph";
+const std::string APP_CONFIG_VERTICAL_ALIGN   = "vertical_align";
+const std::string APP_CONFIG_HORIZONTAL_ALIGN = "horizontal_align";
 const std::string APP_CONFIG_FONT_BOLDNESS    = "boldness";
 const std::string APP_CONFIG_FONT_SKEW        = "skew";
 const std::string APP_CONFIG_FONT_DISTANCE    = "distance";
@@ -558,6 +578,36 @@ bool read(const Section &section, const std::string &key, bool &value)
         return false;
 
     value = true;
+    return true;
+}
+
+bool read(const Section &section, const std::string &key, Slic3r::FontProp::HorizontalAlign &value) {
+    auto item = section.find(key);
+    if (item == section.end())
+        return false;
+
+    const std::string &data = item->second;
+    if (data.empty())
+        return false;
+
+    const auto& map = horizontal_align_to_name.right; 
+    auto it = map.find(data);
+    value = (it != map.end()) ? it->second : Slic3r::FontProp::HorizontalAlign::center;
+    return true;
+}
+
+bool read(const Section &section, const std::string &key, Slic3r::FontProp::VerticalAlign &value) {
+    auto item = section.find(key);
+    if (item == section.end())
+        return false;
+
+    const std::string &data = item->second;
+    if (data.empty())
+        return false;
+
+    const auto &map = vertical_align_to_name.right;
+    auto it = map.find(data);
+    value = (it != map.end()) ? it->second : Slic3r::FontProp::VerticalAlign::center;
     return true;
 }
 
@@ -634,11 +684,11 @@ std::optional<StyleManager::Style> load_style(const Section &app_cfg_section)
     auto path_it = app_cfg_section.find(APP_CONFIG_FONT_DESCRIPTOR);
     if (path_it == app_cfg_section.end())
         return {};
-
+        
     StyleManager::Style s;
     EmbossProjection& ep = s.projection;
     FontProp& fp = s.prop;
-
+    
     s.path = path_it->second;
     s.type = WxFontUtils::get_current_type();
     auto name_it = app_cfg_section.find(APP_CONFIG_FONT_NAME);
@@ -650,6 +700,9 @@ std::optional<StyleManager::Style> load_style(const Section &app_cfg_section)
     read(app_cfg_section, APP_CONFIG_FONT_DEPTH, depth);
     ep.depth = depth;
     read(app_cfg_section, APP_CONFIG_FONT_USE_SURFACE, ep.use_surface);
+    read(app_cfg_section, APP_CONFIG_PER_GLYPH, fp.per_glyph);
+    read(app_cfg_section, APP_CONFIG_HORIZONTAL_ALIGN, fp.align.first);
+    read(app_cfg_section, APP_CONFIG_VERTICAL_ALIGN, fp.align.second);
     read(app_cfg_section, APP_CONFIG_FONT_BOLDNESS, fp.boldness);
     read(app_cfg_section, APP_CONFIG_FONT_SKEW, fp.skew);
     read(app_cfg_section, APP_CONFIG_FONT_DISTANCE, s.distance);
@@ -671,6 +724,12 @@ void store_style(AppConfig &cfg, const StyleManager::Style &s, unsigned index)
     data[APP_CONFIG_FONT_DEPTH]       = std::to_string(ep.depth);
     if (ep.use_surface)
         data[APP_CONFIG_FONT_USE_SURFACE] = "true";
+    if (fp.per_glyph)
+        data[APP_CONFIG_PER_GLYPH] = "true";
+    if (fp.align.first != FontProp::HorizontalAlign::center)
+        data[APP_CONFIG_HORIZONTAL_ALIGN] = horizontal_align_to_name.left.find(fp.align.first)->second;
+    if (fp.align.second != FontProp::VerticalAlign::center)
+        data[APP_CONFIG_VERTICAL_ALIGN] = vertical_align_to_name.left.find(fp.align.second)->second;
     if (fp.boldness.has_value())
         data[APP_CONFIG_FONT_BOLDNESS] = std::to_string(*fp.boldness);
     if (fp.skew.has_value())
@@ -771,7 +830,7 @@ void make_unique_name(const StyleManager::Styles& styles, std::string &name)
     const char *prefix = " (";
     const char  suffix  = ')';
     auto pos = name.find_last_of(prefix);
-    if (name.c_str()[name.size() - 1] == suffix &&
+    if (name.c_str()[name.size() - 1] == suffix && 
         pos != std::string::npos) {
         // short name by ord number
         name = name.substr(0, pos);

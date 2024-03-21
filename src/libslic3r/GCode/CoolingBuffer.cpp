@@ -403,8 +403,8 @@ std::vector<PerExtruderAdjustments> CoolingBuffer::parse_layer_gcode(const std::
 
                 // Parse the axis.
                 size_t axis = (*c >= 'X' && *c <= 'Z') ? (*c - 'X') :
-                              (*c == extrusion_axis) ? AxisIdx::E : (*c == 'F') ? AxisIdx::F :
-                              (*c >= 'I' && *c <= 'K') ? int(AxisIdx::I) + (*c - 'I') :
+                              (*c == extrusion_axis) ? AxisIdx::E : (*c == 'F') ? AxisIdx::F : 
+                              (*c >= 'I' && *c <= 'K') ? int(AxisIdx::I) + (*c - 'I') : 
                               (*c == 'R') ? AxisIdx::R : size_t(-1);
                 if (axis != size_t(-1)) {
                     //auto [pend, ec] =
@@ -560,16 +560,18 @@ std::vector<PerExtruderAdjustments> CoolingBuffer::parse_layer_gcode(const std::
             } else
                 line.time = 0;
             line.time_max = line.time;
-        } else if (boost::contains(sline, ";_SET_FAN_SPEED")) {
+        }
+
+        if (boost::contains(sline, ";_SET_FAN_SPEED")) {
             auto speed_start = sline.find_last_of('D');
             int  speed       = 0;
             for (char num : sline.substr(speed_start + 1)) {
                 speed = speed * 10 + (num - '0');
             }
-            line.type = CoolingLine::TYPE_SET_FAN_SPEED;
+            line.type |= CoolingLine::TYPE_SET_FAN_SPEED;
             line.fan_speed = speed;
         } else if (boost::contains(sline, ";_RESET_FAN_SPEED")) {
-            line.type = CoolingLine::TYPE_RESET_FAN_SPEED;
+            line.type |= CoolingLine::TYPE_RESET_FAN_SPEED;
         }
 
         if (line.type != 0)

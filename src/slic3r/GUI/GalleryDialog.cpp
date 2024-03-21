@@ -417,8 +417,7 @@ void GalleryDialog::load_label_icon_list()
     int img_cnt = m_image_list->GetImageCount();
     for (int i = 0; i < img_cnt; i++) {
         m_list_ctrl->InsertItem(i, from_u8(list_items[i].name), i);
-        if (list_items[i].is_system)
-            m_list_ctrl->SetItemFont(i, wxGetApp().bold_font());
+        m_list_ctrl->SetItemData(i, list_items[i].is_system ? 1 : 0);
     }
 }
 
@@ -504,7 +503,7 @@ void GalleryDialog::change_thumbnail()
         png_path.replace_extension("png");
 
         fs::path current = fs::path(into_u8(input_files.Item(0)));
-        fs::copy_file(current, png_path, fs::copy_option::overwrite_if_exists);
+        fs::copy_file(current, png_path, fs::copy_options::overwrite_existing);
     }
     catch (fs::filesystem_error const& e) {
         std::cerr << e.what() << '\n';
@@ -517,7 +516,7 @@ void GalleryDialog::change_thumbnail()
 void GalleryDialog::select(wxListEvent& event)
 {
     int idx = event.GetIndex();
-    Item item { into_u8(m_list_ctrl->GetItemText(idx)), m_list_ctrl->GetItemFont(idx).GetWeight() == wxFONTWEIGHT_BOLD };
+    Item item { into_u8(m_list_ctrl->GetItemText(idx)), m_list_ctrl->GetItemData(idx) == static_cast<wxUIntPtr>(1)};
 
     m_selected_items.push_back(item);
 }

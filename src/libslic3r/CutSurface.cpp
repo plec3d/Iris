@@ -1924,15 +1924,15 @@ uint32_t priv::find_closest_point_index(const Point            &p,
     if (sd.tree.nodes().size() == 0){
         // no lines in expolygon, check whether exist point to start
         double closest_square_distance = INFINITY;
-        uint32_t closest_id = -1;
-        for (uint32_t i = 0; i < mask.size(); i++)
+        uint32_t closest_id = -1; 
+        for (uint32_t i = 0; i < mask.size(); i++) 
             if (mask[i]){
                 ExPolygonsIndex ei = s2i.cvt(i);
-                const Point& s_p = ei.is_contour()?
+                const Point& s_p = ei.is_contour()? 
                     shapes[ei.expolygons_index].contour[ei.point_index]:
                 shapes[ei.expolygons_index].holes[ei.hole_index()][ei.point_index];
                 double square_distance = (p - s_p).cast<double>().squaredNorm();
-                if (closest_id >= mask.size() ||
+                if (closest_id >= mask.size() || 
                     closest_square_distance > square_distance) {
                     closest_id = i;
                     closest_square_distance = square_distance;

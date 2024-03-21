@@ -32,6 +32,7 @@
 #include <chrono> // measure enumeration of fonts
 #include <sstream> // save for svg
 #include <array>
+#include <fstream>
 
 using namespace Slic3r;
 using namespace Slic3r::Emboss;
@@ -49,6 +50,14 @@ GLGizmoSVG::GLGizmoSVG(GLCanvas3D &parent)
 
 // Private functions to create emboss volume
 namespace{
+
+// TRN - Title in Undo/Redo stack after rotate with SVG around emboss axe
+const std::string rotation_snapshot_name = L("SVG rotate");
+// NOTE: Translation is made in "m_parent.do_rotate()"
+
+// TRN - Title in Undo/Redo stack after move with SVG along emboss axe - From surface
+const std::string move_snapshot_name = L("SVG move");
+// NOTE: Translation is made in "m_parent.do_translate()"
 
 // Variable keep limits for variables
 const struct Limits
@@ -219,7 +228,7 @@ bool GLGizmoSVG::create_volume(std::string_view svg_file, const Vec2d &mouse_pos
 }
 
 bool GLGizmoSVG::is_svg(const ModelVolume &volume) {
-    return volume.emboss_shape.has_value();
+    return volume.emboss_shape.has_value() && volume.emboss_shape->svg_file.has_value();
 }
 
 bool GLGizmoSVG::is_svg_object(const ModelVolume &volume) {
@@ -232,16 +241,6 @@ bool GLGizmoSVG::is_svg_object(const ModelVolume &volume) {
     return true;
 }
 
-namespace {
-TransformationType get_transformation_type(const Selection &selection)
-{
-    assert(selection.is_single_full_object() || selection.is_single_volume());
-    return selection.is_single_volume() ? 
-        TransformationType::Local_Relative_Independent :
-        TransformationType::Instance_Relative_Independent; // object
-}
-} // namespace
-
 bool GLGizmoSVG::on_mouse_for_rotation(const wxMouseEvent &mouse_event)
 {
     if (mouse_event.Moving()) return false;
@@ -249,57 +248,10 @@ bool GLGizmoSVG::on_mouse_for_rotation(const wxMouseEvent &mouse_event)
     bool used = use_grabbers(mouse_event);
     if (!m_dragging) return used;
 
-    if (mouse_event.Dragging()) {
-        if (!m_rotate_start_angle.has_value())
-            m_rotate_start_angle = m_angle.value_or(0.f);
-        double angle = m_rotate_gizmo.get_angle();
-        angle -= PI / 2; // Grabber is upward
-
-        double new_angle = angle + *m_rotate_start_angle;
-        // move to range <-M_PI, M_PI>
-        Geometry::to_range_pi_pi(new_angle);      
-
-        double z_rotation = m_volume->emboss_shape->fix_3mf_tr.has_value()? 
-            (new_angle - m_angle.value_or(0.f)) : // relative angle
-            angle; // relativity is keep by selection cache
-
-        Selection &selection = m_parent.get_selection();
-        auto selection_rotate_fnc = [z_rotation, &selection]() { 
-            selection.rotate(Vec3d(0., 0., z_rotation), get_transformation_type(selection));
-        };
-        selection_transform(selection, selection_rotate_fnc, m_volume);
-        
-        // propagate angle into property
-        m_angle = static_cast<float>(new_angle);
-
-        // do not store zero
-        if (is_approx(*m_angle, 0.f))
-            m_angle.reset();
-    }
+    if (mouse_event.Dragging())
+        dragging_rotate_gizmo(m_rotate_gizmo.get_angle(), m_angle, m_rotate_start_angle, m_parent.get_selection());
+    
     return used;
-}
-
-namespace{
-std::optional<float> calculate_angle(const Selection& selection)
-{
-    const GLVolume *gl_volume = selection.get_first_volume();
-    assert(gl_volume != nullptr);
-    if (gl_volume == nullptr)
-        return {};
-
-    Transform3d to_world = gl_volume->world_matrix();
-    const ModelVolume* volume = get_model_volume(*gl_volume, selection.get_model()->objects);
-    assert(volume != nullptr);
-    assert(volume->emboss_shape.has_value());
-    if (volume == nullptr || 
-        !volume->emboss_shape.has_value() ||
-        !volume->emboss_shape->fix_3mf_tr)        
-        return calc_up(to_world, Slic3r::GUI::up_limit);
-
-    // exist fix matrix and must be applied before calculation
-    to_world = to_world * volume->emboss_shape->fix_3mf_tr->inverse();
-    return calc_up(to_world, Slic3r::GUI::up_limit);
-}
 }
 
 bool GLGizmoSVG::on_mouse_for_translate(const wxMouseEvent &mouse_event)
@@ -308,9 +260,7 @@ bool GLGizmoSVG::on_mouse_for_translate(const wxMouseEvent &mouse_event)
     if (m_volume == nullptr)
         return false;
 
-    std::optional<double> up_limit;
-    if (m_keep_up)
-        up_limit = Slic3r::GUI::up_limit;
+    auto up_limit = m_keep_up ? std::optional<double>(UP_LIMIT) : std::optional<double>{};
     const Camera &camera = wxGetApp().plater()->get_camera();
 
     bool was_dragging = m_surface_drag.has_value();
@@ -346,9 +296,39 @@ bool GLGizmoSVG::on_mouse_for_translate(const wxMouseEvent &mouse_event)
 
         // Recalculate angle for GUI
         if (!m_keep_up)
-            m_angle = calculate_angle(m_parent.get_selection());
+            m_angle = calc_angle(m_parent.get_selection());
     }
     return res;
+}
+
+void GLGizmoSVG::volume_transformation_changed()
+{
+    if (m_volume == nullptr || 
+        !m_volume->emboss_shape.has_value()) {
+        assert(false);
+        return;
+    }
+
+    if (!m_keep_up) {
+        // update current style
+        m_angle = calc_angle(m_parent.get_selection());
+    } else {
+        // angle should be the same
+        assert(is_approx(m_angle, calc_angle(m_parent.get_selection())));
+    }
+
+    // Update surface by new position
+    if (m_volume->emboss_shape->projection.use_surface) {
+        process();
+    } else {
+        // inform slicing process that model changed
+        // SLA supports, processing
+        // ensure on bed
+        wxGetApp().plater()->changed_object(*m_volume->get_object());
+    }
+
+    // Show correct value of height & depth inside of inputs
+    calculate_scale();
 }
 
 bool GLGizmoSVG::on_mouse(const wxMouseEvent &mouse_event)
@@ -382,17 +362,12 @@ bool GLGizmoSVG::on_init()
 std::string GLGizmoSVG::on_get_name() const { return _u8L("SVG"); }
 
 void GLGizmoSVG::on_render() {
-    // no volume selected
-    if (m_volume == nullptr ||
-        get_model_volume(m_volume_id, m_parent.get_selection().get_model()->objects) == nullptr)
+    if (const Selection &selection = m_parent.get_selection(); 
+        selection.volumes_count() != 1 || // only one selected volume
+        m_volume == nullptr || // already selected volume in gizmo
+        get_model_volume(m_volume_id, selection.get_model()->objects) == nullptr) // still exist model
         return;
 
-    Selection &selection = m_parent.get_selection();
-    if (selection.is_empty()) return;
-
-    // prevent get local coordinate system on multi volumes
-    if (!selection.is_single_volume_or_modifier() && 
-        !selection.is_single_volume_instance()) return;
     bool is_surface_dragging = m_surface_drag.has_value();
     bool is_parent_dragging = m_parent.is_mouse_dragging();
     // Do NOT render rotation grabbers when dragging object
@@ -571,9 +546,10 @@ void GLGizmoSVG::on_stop_dragging()
     m_rotate_gizmo.set_angle(PI/2);
 
     // apply rotation
-    m_parent.do_rotate(L("Text-Rotate"));
-
+    // TRN This is an item label in the undo-redo stack.
+    m_parent.do_rotate(rotation_snapshot_name);
     m_rotate_start_angle.reset();
+    volume_transformation_changed();
 
     // recalculate for surface cut
     if (m_volume != nullptr && 
@@ -588,32 +564,6 @@ void GLGizmoSVG::on_dragging(const UpdateData &data) { m_rotate_gizmo.dragging(d
 #include "libslic3r/AABBTreeLines.hpp" // aabb lines for draw filled expolygon
 
 namespace{
-NSVGimage* init_image(EmbossShape::SvgFile &svg_file) {
-    // is already initialized?
-    if (svg_file.image.get() != nullptr)
-        return svg_file.image.get();
-
-
-    if (svg_file.file_data == nullptr){
-        // chech if path is known
-        if (svg_file.path.empty())
-            return nullptr;
-        svg_file.file_data = read_from_disk(svg_file.path);
-        if (svg_file.file_data == nullptr)
-            return nullptr;
-    }
-
-    // init svg image
-    svg_file.image = nsvgParse(*svg_file.file_data);
-    if (svg_file.image.get() == NULL)
-        return nullptr;
-
-    // Disable stroke
-    //for (NSVGshape *shape = svg_file.image->shapes; shape != NULL; shape = shape->next)
-    //    shape->stroke.type = 0;
-
-    return svg_file.image.get();
-}
 
 // inspired by Xiaolin Wu's line algorithm - https://en.wikipedia.org/wiki/Xiaolin_Wu's_line_algorithm
 // Draw inner part of polygon CCW line as full brightness(edge of expolygon)
@@ -707,6 +657,7 @@ void wu_draw_line_side(Linef line,
     }
 }
 
+#ifdef MORE_DRAWING
 // Wu's line algorithm - https://en.wikipedia.org/wiki/Xiaolin_Wu's_line_algorithm
 void wu_draw_line(Linef line,
                 const std::function<void(int x, int y, float brightess)>& plot) {
@@ -777,6 +728,36 @@ void wu_draw_line(Linef line,
     }
 }
 
+void draw(const ExPolygonsWithIds &shapes_with_ids, unsigned max_size)
+{
+    ImVec2 actual_pos = ImGui::GetCursorPos();
+    // draw shapes
+    BoundingBox bb;
+    for (const ExPolygonsWithId &shape : shapes_with_ids)
+        bb.merge(get_extents(shape.expoly));
+
+    Point  bb_size    = bb.size();
+    double scale      = max_size / (double) std::max(bb_size.x(), bb_size.y());
+    ImVec2 win_offset = ImGui::GetWindowPos();
+    Point  offset(win_offset.x + actual_pos.x, win_offset.y + actual_pos.y);
+    offset += bb_size / 2 * scale;
+    auto draw_polygon = [&scale, offset](Slic3r::Polygon p) {
+        p.scale(scale, -scale); // Y mirror
+        p.translate(offset);
+        ImGuiWrapper::draw(p);
+    };
+
+    for (const ExPolygonsWithId &shape : shapes_with_ids) {
+        for (const ExPolygon &expoly : shape.expoly) {
+            draw_polygon(expoly.contour);
+            for (const Slic3r::Polygon &hole : expoly.holes)
+                draw_polygon(hole);
+        }
+    }
+}
+
+#endif // MORE_DRAWING
+
 template<unsigned int N> // N .. count of channels per pixel
 void draw_side_outline(const ExPolygons &shape, const std::array<unsigned char, N> &color, std::vector<unsigned char> &data, size_t data_width, double scale)
 {
@@ -789,7 +770,7 @@ void draw_side_outline(const ExPolygons &shape, const std::array<unsigned char, 
 
     // overlap color
     auto draw = [&data, data_width, count_lines, get_offset, &color](int x, int y, float brightess) {
-        if (x < 0 || y < 0 || x >= data_width || y >= count_lines)
+        if (x < 0 || y < 0 || static_cast<size_t>(x) >= data_width || y >= count_lines)
             return; // out of image
         size_t offset = get_offset(x, y);
         bool change_color = false;
@@ -869,13 +850,13 @@ void draw_filled(const ExPolygons &shape, const std::array<unsigned char, N>& co
         size_t offset = get_offset(x, y);
         if (data[offset + N - 1] != 0)
             return; // already setted by line
-        for (size_t i = 0; i < N; ++i)
+        for (unsigned i = 0; i < N; ++i)
             data[offset + i] = color[i];
     };
 
     // anti aliased drawing of lines
-    auto draw = [&data, data_width, count_lines, get_offset, &color](int x, int y, float brightess) {
-        if (x < 0 || y < 0 || x >= data_width || y >= count_lines)
+    auto draw = [&data, width = static_cast<int>(data_width), count_lines, get_offset, &color](int x, int y, float brightess) {
+        if (x < 0 || y < 0 || x >= width || y >= count_lines)
             return; // out of image
         size_t offset = get_offset(x, y);
         unsigned char &alpha = data[offset + N - 1];
@@ -933,6 +914,19 @@ void draw_filled(const ExPolygons &shape, const std::array<unsigned char, N>& co
     }  
 }
 
+/// Union shape defined by glyphs
+ExPolygons union_ex(const ExPolygonsWithIds &shapes)
+{
+    // unify to one expolygon
+    ExPolygons result;
+    for (const ExPolygonsWithId &shape : shapes) {
+        if (shape.expoly.empty())
+            continue;
+        expolygons_append(result, shape.expoly);
+    }
+    return union_ex(result);
+}
+
 // init texture by draw expolygons into texture
 bool init_texture(Texture &texture, const ExPolygonsWithIds& shapes_with_ids, unsigned max_size_px, const std::vector<std::string>& shape_warnings){
     BoundingBox bb = get_extents(shapes_with_ids);
@@ -959,10 +953,7 @@ bool init_texture(Texture &texture, const ExPolygonsWithIds& shapes_with_ids, un
     std::vector<unsigned char> data(n_pixels * channels_count, {0});
 
     // Union All shapes
-    ExPolygons shape;
-    for (const ExPolygonsWithId &shapes_with_id : shapes_with_ids)
-        expolygons_append(shape, shapes_with_id.expoly);
-    shape = union_ex(shape);
+    ExPolygons shape = union_ex(shapes_with_ids);
 
     // align to texture
     translate(shape, -bb.min);
@@ -1102,11 +1093,12 @@ std::string create_stroke_warning(const NSVGshape &shape) {
 /// <returns>Vector of warnings with same size as EmbossShape::shapes_with_ids
 /// or Empty when no warnings -> for fast checking that every thing is all right(more common case) </returns>
 std::vector<std::string> create_shape_warnings(const EmbossShape &shape, float scale){
-    assert(shape.svg_file.image != nullptr);
-    if (shape.svg_file.image == nullptr)
+    const std::shared_ptr<NSVGimage>& image_ptr = shape.svg_file->image;
+    assert(image_ptr != nullptr);
+    if (image_ptr == nullptr)
         return {std::string{"Uninitialized SVG image"}};
 
-    const NSVGimage &image = *shape.svg_file.image;
+    const NSVGimage &image = *image_ptr;
     std::vector<std::string> result;
     auto add_warning = [&result, &image](size_t index, const std::string &message) {
         if (result.empty())
@@ -1118,7 +1110,7 @@ std::vector<std::string> create_shape_warnings(const EmbossShape &shape, float s
             res += '\n' + message;
     };
 
-    if (!shape.is_healed) {
+    if (!shape.final_shape.is_healed) {
         for (const ExPolygonsWithId &i : shape.shapes_with_ids)
             if (!i.is_healed)
                 add_warning(i.id, _u8L("Path can't be healed from selfintersection and multiple points."));
@@ -1190,8 +1182,9 @@ void GLGizmoSVG::set_volume_by_selection()
     // calculate scale for height and depth inside of scaled object instance
     calculate_scale(); // must be before calculation of tesselation
 
+    // checking that exist is inside of function "is_svg"
     EmbossShape &es = *volume->emboss_shape;
-    EmbossShape::SvgFile &svg_file = es.svg_file;
+    EmbossShape::SvgFile &svg_file = *es.svg_file;
     if (svg_file.image == nullptr) {
         if (init_image(svg_file) == nullptr)
             return reset_volume();
@@ -1213,7 +1206,7 @@ void GLGizmoSVG::set_volume_by_selection()
     m_shape_warnings = create_shape_warnings(es, get_scale_for_tolerance());
 
     // Calculate current angle of up vector
-    m_angle    = calculate_angle(selection);
+    m_angle    = calc_angle(selection);
     m_distance = calc_distance(*gl_volume, m_raycast_manager, m_parent);
     
     m_shape_bb = get_extents(m_volume_shape.shapes_with_ids);
@@ -1281,8 +1274,7 @@ void GLGizmoSVG::calculate_scale() {
 float GLGizmoSVG::get_scale_for_tolerance(){ 
     return std::max(m_scale_width.value_or(1.f), m_scale_height.value_or(1.f)); }
 
-bool GLGizmoSVG::process()
-{
+bool GLGizmoSVG::process(bool make_snapshot) {
     // no volume is selected -> selection from right panel
     assert(m_volume != nullptr);
     if (m_volume == nullptr) 
@@ -1303,7 +1295,7 @@ bool GLGizmoSVG::process()
     EmbossShape shape = m_volume_shape; // copy
     auto base = std::make_unique<DataBase>(m_volume->name, m_job_cancel, std::move(shape));
     base->is_outside = m_volume->type() == ModelVolumeType::MODEL_PART;
-    DataUpdate data{std::move(base), m_volume_id};
+    DataUpdate data{std::move(base), m_volume_id, make_snapshot};
     return start_update_volume(std::move(data), *m_volume, m_parent.get_selection(), m_raycast_manager);    
 }
 
@@ -1332,6 +1324,18 @@ void GLGizmoSVG::draw_window()
         return;
     }
 
+    assert(m_volume->emboss_shape->svg_file.has_value());
+    if (!m_volume->emboss_shape->svg_file.has_value()){
+        ImGui::Text("Missing svg file in embossed shape");
+        return;
+    }
+
+    assert(m_volume->emboss_shape->svg_file->file_data != nullptr);
+    if (m_volume->emboss_shape->svg_file->file_data == nullptr){
+        ImGui::Text("Missing data of svg file");
+        return;
+    }
+
     draw_preview();
     draw_filename();
 
@@ -1348,15 +1352,7 @@ void GLGizmoSVG::draw_window()
     draw_distance();
     draw_rotation();
     draw_mirroring();
-
-    /* 
-    if (ImGui::Button(_u8L("Face the camera").c_str())) {
-        const Camera &cam = wxGetApp().plater()->get_camera();
-        if (face_selected_volume_to_camera(cam, m_parent) && 
-            m_volume->emboss_shape->projection.use_surface)
-            process();
-    }
-    */
+    draw_face_the_camera();
 
     ImGui::Unindent(m_gui_cfg->icon_width);  
 
@@ -1365,34 +1361,14 @@ void GLGizmoSVG::draw_window()
         draw_model_type();
     }
 }
-namespace {
-void draw(const ExPolygonsWithIds& shapes_with_ids, unsigned max_size)
-{
-    ImVec2 actual_pos = ImGui::GetCursorPos();
-    // draw shapes
-    BoundingBox bb;
-    for (const ExPolygonsWithId &shape : shapes_with_ids)
-        bb.merge(get_extents(shape.expoly));
 
-    Point  bb_size    = bb.size();
-    double scale      = max_size / (double) std::max(bb_size.x(), bb_size.y());
-    ImVec2 win_offset = ImGui::GetWindowPos();
-    Point  offset(win_offset.x + actual_pos.x, win_offset.y + actual_pos.y);
-    offset += bb_size / 2 * scale;
-    auto draw_polygon = [&scale, offset](Slic3r::Polygon p) {
-        p.scale(scale, -scale); // Y mirror
-        p.translate(offset);
-        ImGuiWrapper::draw(p);
-    };
-
-    for (const ExPolygonsWithId &shape : shapes_with_ids) {
-        for (const ExPolygon &expoly : shape.expoly) {
-            draw_polygon(expoly.contour);
-            for (const Slic3r::Polygon &hole : expoly.holes)
-                draw_polygon(hole);
-        }
+void GLGizmoSVG::draw_face_the_camera(){
+    if (ImGui::Button(_u8L("Face the camera").c_str())) {
+        const Camera &cam = wxGetApp().plater()->get_camera();
+        auto wanted_up_limit = (m_keep_up) ? std::optional<double>(UP_LIMIT) : std::optional<double>{};
+        if (face_selected_volume_to_camera(cam, m_parent, wanted_up_limit))
+            volume_transformation_changed();
     }
-}
 }
 
 void GLGizmoSVG::draw_preview(){
@@ -1448,20 +1424,20 @@ void GLGizmoSVG::draw_preview(){
 
 void GLGizmoSVG::draw_filename(){
     const EmbossShape &es = *m_volume->emboss_shape;
+    const EmbossShape::SvgFile &svg = *es.svg_file;
     if (m_filename_preview.empty()){
         // create filename preview
-        if (!es.svg_file.path.empty()) {
-            m_filename_preview = get_file_name(es.svg_file.path);
-        } else if (!es.svg_file.path_in_3mf.empty()) {
-            m_filename_preview = get_file_name(es.svg_file.path_in_3mf);
+        if (!svg.path.empty()) {
+            m_filename_preview = get_file_name(svg.path);
+        } else if (!svg.path_in_3mf.empty()) {
+            m_filename_preview = get_file_name(svg.path_in_3mf);
         }
 
-        if (m_filename_preview.empty()){
-            assert(false);
-            m_filename_preview = "unknown";
-        } else {        
-            m_filename_preview = ImGuiWrapper::trunc(m_filename_preview, m_gui_cfg->input_width);
-        }
+        if (m_filename_preview.empty())
+            // TRN - Preview of filename after clear local filepath.
+            m_filename_preview = _u8L("Unknown filename");
+        
+        m_filename_preview = ImGuiWrapper::trunc(m_filename_preview, m_gui_cfg->input_width);
     }
 
     if (!m_shape_warnings.empty()){
@@ -1490,19 +1466,19 @@ void GLGizmoSVG::draw_filename(){
 
     is_hovered |= ImGui::IsItemHovered();
     if (is_hovered) {
-        std::string tooltip = GUI::format(_L("SVG file path is \"%1%\""), es.svg_file.path);
+        std::string tooltip = GUI::format(_L("SVG file path is \"%1%\""), svg.path);
         ImGui::SetTooltip("%s", tooltip.c_str());
     }
 
     bool file_changed = false;
 
     // Re-Load button
-    bool can_reload = !m_volume_shape.svg_file.path.empty();
+    bool can_reload = !m_volume_shape.svg_file->path.empty();
     if (can_reload) {
         ImGui::SameLine();
         if (clickable(get_icon(m_icons, IconType::refresh), get_icon(m_icons, IconType::refresh_hover))) {
-            if (!boost::filesystem::exists(m_volume_shape.svg_file.path)) {
-                m_volume_shape.svg_file.path.clear();
+            if (!boost::filesystem::exists(m_volume_shape.svg_file->path)) {
+                m_volume_shape.svg_file->path.clear();
             } else {
                 file_changed = true;
             }
@@ -1521,15 +1497,16 @@ void GLGizmoSVG::draw_filename(){
             std::string new_path = choose_svg_file();
             if (!new_path.empty()) {
                 file_changed = true;
-                m_volume_shape.svg_file = {}; // clear data
-                m_volume_shape.svg_file.path = new_path;
+                EmbossShape::SvgFile svg_file_new;
+                svg_file_new.path = new_path;
+                m_volume_shape.svg_file = svg_file_new; // clear data
             }
         } else if (ImGui::IsItemHovered()) {
             ImGui::SetTooltip("%s", _u8L("Change to another .svg file").c_str());
         }
 
         std::string forget_path = _u8L("Forget the file path");
-        if (m_volume->emboss_shape->svg_file.path.empty()){
+        if (m_volume->emboss_shape->svg_file->path.empty()){
             draw(get_icon(m_icons, IconType::bake_inactive));
             ImGui::SameLine();
             m_imgui->text_colored(ImGuiWrapper::COL_GREY_DARK, forget_path.c_str());
@@ -1538,8 +1515,8 @@ void GLGizmoSVG::draw_filename(){
             ImGui::SameLine();
             if (ImGui::Selectable(forget_path.c_str())) {
                 // set .svg_file.path_in_3mf to remember file name
-                m_volume->emboss_shape->svg_file.path.clear();
-                m_volume_shape.svg_file.path.clear();
+                m_volume->emboss_shape->svg_file->path.clear();
+                m_volume_shape.svg_file->path.clear();
                 m_filename_preview.clear();
             } else if (ImGui::IsItemHovered()) {
                 ImGui::SetTooltip("%s", _u8L("Do NOT save local path to 3MF file.\n"
@@ -1583,7 +1560,7 @@ void GLGizmoSVG::draw_filename(){
             GUI::FileType file_type  = FT_SVG;
             wxString wildcard = file_wildcards(file_type);
             wxString dlg_title = _L("Save SVG file");
-            const EmbossShape::SvgFile& svg = m_volume_shape.svg_file;
+            const EmbossShape::SvgFile& svg = *m_volume_shape.svg_file;
             wxString dlg_file = from_u8(get_file_name(((!svg.path.empty()) ? svg.path : svg.path_in_3mf))) + ".svg";
             wxFileDialog dlg(parent, dlg_title, last_used_directory, dlg_file, wildcard, wxFD_SAVE | wxFD_OVERWRITE_PROMPT);
             if (dlg.ShowModal() == wxID_OK ){
@@ -1598,8 +1575,8 @@ void GLGizmoSVG::draw_filename(){
 
                     // change source file
                     m_filename_preview.clear();
-                    m_volume_shape.svg_file.path = path;
-                    m_volume_shape.svg_file.path_in_3mf.clear(); // possible change name
+                    m_volume_shape.svg_file->path = path;
+                    m_volume_shape.svg_file->path_in_3mf.clear(); // possible change name
                     m_volume->emboss_shape->svg_file = m_volume_shape.svg_file; // copy - write changes into volume
                 } else {
                     BOOST_LOG_TRIVIAL(error) << "Opening file: \"" << path << "\" Failed";
@@ -1633,9 +1610,10 @@ void GLGizmoSVG::draw_filename(){
     if (file_changed) {
         float scale = get_scale_for_tolerance();
         double tes_tol = get_tesselation_tolerance(scale);
-        EmbossShape es_ = select_shape(m_volume_shape.svg_file.path, tes_tol);
+        EmbossShape es_ = select_shape(m_volume_shape.svg_file->path, tes_tol);
         m_volume_shape.svg_file = std::move(es_.svg_file);
         m_volume_shape.shapes_with_ids = std::move(es_.shapes_with_ids);
+        m_volume_shape.final_shape = {}; // clear cache
         m_shape_warnings = create_shape_warnings(m_volume_shape, scale);
         init_texture(m_texture, m_volume_shape.shapes_with_ids, m_gui_cfg->texture_max_size_px, m_shape_warnings);
         process();
@@ -1711,6 +1689,8 @@ void GLGizmoSVG::draw_size()
     };
 
     std::optional<Vec3d> new_relative_scale;
+    bool make_snap = false;
+
     if (m_keep_ratio) {
         std::stringstream ss;
         ss << std::setprecision(2) << std::fixed << width << " x " << height << " " << (use_inch ? "in" : "mm");
@@ -1729,6 +1709,8 @@ void GLGizmoSVG::draw_size()
                 new_relative_scale = Vec3d(width_ratio, width_ratio, 1.);
             }
         }
+        if (m_imgui->get_last_slider_status().deactivated_after_edit)
+            make_snap = true; // only last change of slider make snap
     } else {
         ImGuiInputTextFlags flags = 0;
 
@@ -1748,6 +1730,7 @@ void GLGizmoSVG::draw_size()
             if (is_valid_scale_ratio(width_ratio)) {
                 m_scale_width = m_scale_width.value_or(1.f) * width_ratio;
                 new_relative_scale = Vec3d(width_ratio, 1., 1.);
+                make_snap = true;
             }
         }
         if (ImGui::IsItemHovered())
@@ -1761,6 +1744,7 @@ void GLGizmoSVG::draw_size()
             if (is_valid_scale_ratio(height_ratio)) {
                 m_scale_height = m_scale_height.value_or(1.f) * height_ratio;
                 new_relative_scale  = Vec3d(1., height_ratio, 1.);
+                make_snap = true;
             }
         }
         if (ImGui::IsItemHovered())
@@ -1778,10 +1762,11 @@ void GLGizmoSVG::draw_size()
     
 
     // reset button
-    bool can_reset = m_scale_width.has_value() || m_scale_height.has_value() || m_scale_depth.has_value();
+    bool can_reset = m_scale_width.has_value() || m_scale_height.has_value();
     if (can_reset) {
         if (reset_button(m_icons)) {
             new_relative_scale = Vec3d(1./m_scale_width.value_or(1.f), 1./m_scale_height.value_or(1.f), 1.);
+            make_snap = true;
         } else if (ImGui::IsItemHovered())
             ImGui::SetTooltip("%s", _u8L("Reset scale").c_str());
     }
@@ -1791,23 +1776,29 @@ void GLGizmoSVG::draw_size()
         selection.setup_cache();
 
         auto selection_scale_fnc = [&selection, rel_scale = *new_relative_scale]() {
-            selection.scale(rel_scale, get_transformation_type(selection));
+            selection.scale(rel_scale, get_drag_transformation_type(selection));
         };        
-        selection_transform(selection, selection_scale_fnc, m_volume);
+        selection_transform(selection, selection_scale_fnc);
 
-        m_parent.do_scale(L("Resize"));
+        std::string snap_name; // Empty mean do not store on undo/redo stack
+        m_parent.do_scale(snap_name);
         wxGetApp().obj_manipul()->set_dirty();
         // should be the almost same
         calculate_scale();
                 
-        NSVGimage *img = m_volume_shape.svg_file.image.get();
+        const NSVGimage *img = m_volume_shape.svg_file->image.get();
         assert(img != NULL);
         if (img != NULL){
             NSVGLineParams params{get_tesselation_tolerance(get_scale_for_tolerance())};
             m_volume_shape.shapes_with_ids = create_shape_with_ids(*img, params);
-            process();        
+            m_volume_shape.final_shape = {}; // reset cache for final shape
+            if (!make_snap) // Be carefull: Last change may be without change of scale
+                process(false);
         }
     }
+
+    if (make_snap)
+        process(); // make undo/redo snap-shot
 }
 
 void GLGizmoSVG::draw_use_surface() 
@@ -1861,18 +1852,20 @@ void GLGizmoSVG::draw_distance()
         if (m_imgui->slider_optional_float("##distance", m_distance, min_distance, max_distance, "%.2f mm", 1.f, false, move_tooltip)) 
             is_moved = true;
     }
-
-    bool can_reset = m_distance.has_value();
-    if (can_reset) {
+    bool is_stop_sliding = m_imgui->get_last_slider_status().deactivated_after_edit;
+    bool is_reseted = false;
+    if (m_distance.has_value()) {
         if (reset_button(m_icons)) {
             m_distance.reset();
-            is_moved = true;
+            is_reseted = true;
         } else if (ImGui::IsItemHovered())
             ImGui::SetTooltip("%s", _u8L("Reset distance").c_str());
     }
 
-    if (is_moved)
-        do_local_z_move(m_parent, m_distance.value_or(.0f) - prev_distance);
+    if (is_moved || is_reseted)
+        do_local_z_move(m_parent.get_selection(), m_distance.value_or(.0f) - prev_distance);    
+    if (is_stop_sliding || is_reseted)
+        m_parent.do_move(move_snapshot_name);
 }
 
 void GLGizmoSVG::draw_rotation()
@@ -1893,29 +1886,37 @@ void GLGizmoSVG::draw_rotation()
         Geometry::to_range_pi_pi(angle_rad);                
 
         double diff_angle = angle_rad - angle;
-
-        do_local_z_rotate(m_parent, diff_angle);
+        
+        do_local_z_rotate(m_parent.get_selection(), diff_angle);
 
         // calc angle after rotation
-        m_angle = calculate_angle(m_parent.get_selection());
+        m_angle = calc_angle(m_parent.get_selection());
         
         // recalculate for surface cut
         if (m_volume->emboss_shape->projection.use_surface)
             process();
     }
+    bool is_stop_sliding = m_imgui->get_last_slider_status().deactivated_after_edit;
 
     // Reset button
+    bool is_reseted = false;
     if (m_angle.has_value()) {
         if (reset_button(m_icons)) {
-            do_local_z_rotate(m_parent, -(*m_angle));
+            do_local_z_rotate(m_parent.get_selection(), -(*m_angle));
             m_angle.reset();
 
             // recalculate for surface cut
             if (m_volume->emboss_shape->projection.use_surface)
                 process();
+
+            is_reseted = true;
         } else if (ImGui::IsItemHovered())
             ImGui::SetTooltip("%s", _u8L("Reset rotation").c_str());
     }
+
+    // Apply rotation on model (backend)
+    if (is_stop_sliding || is_reseted)
+        m_parent.do_rotate(rotation_snapshot_name);    
 
     // Keep up - lock button icon
     if (!m_volume->is_the_only_one_part()) {
@@ -1952,12 +1953,17 @@ void GLGizmoSVG::draw_mirroring()
         selection.setup_cache();
 
         auto selection_mirror_fnc = [&selection, &axis](){
-            selection.mirror(axis, get_transformation_type(selection));
+            selection.mirror(axis, get_drag_transformation_type(selection));
         };
-        selection_transform(selection, selection_mirror_fnc, m_volume);
-
+        selection_transform(selection, selection_mirror_fnc);
         m_parent.do_mirror(L("Set Mirror"));
-        wxGetApp().obj_manipul()->UpdateAndShow(true);
+
+        // Mirror is ignoring keep up !!
+        if (m_keep_up)
+            m_angle = calc_angle(selection);
+
+        volume_transformation_changed();
+
 
         if (m_volume_shape.projection.use_surface)
             process();
@@ -2074,7 +2080,7 @@ std::string get_file_name(const std::string &file_path)
 
 std::string volume_name(const EmbossShape &shape)
 {
-    std::string file_name = get_file_name(shape.svg_file.path);
+    std::string file_name = get_file_name(shape.svg_file->path);
     if (!file_name.empty())
         return file_name;
     return "SVG shape";
@@ -2144,7 +2150,7 @@ GuiCfg create_gui_configuration() {
         cfg.texture_max_size_px + 2 * style.FramePadding.y +  // preview (-- not sure with padding -> fix retina height)
         line_height_with_spacing + // filename
         separator_height + // separator - orange line
-        input_height * 6 + // depth + size + use_surface + FromSurface + Rotation + Mirror 
+        input_height * 7 + // depth + size + use_surface + FromSurface + Rotation + Mirror + FaceTheCamera
         2 * style.WindowPadding.y;
     cfg.window_size_for_object = ImVec2(std::max(window_input_width, window_image_width), window_height);
     float change_type_height = separator_height + line_height_with_spacing + input_height;
@@ -2195,42 +2201,44 @@ EmbossShape select_shape(std::string_view filepath, double tesselation_tolerance
     EmbossShape shape;
     shape.projection.depth       = 10.;
     shape.projection.use_surface = false;
-
+    
+    EmbossShape::SvgFile svg;
     if (filepath.empty()) {
         // When empty open file dialog
-        shape.svg_file.path = choose_svg_file();
-        if (shape.svg_file.path.empty())            
+        svg.path = choose_svg_file();
+        if (svg.path.empty())            
             return {}; // file was not selected
     } else {
-        shape.svg_file.path = filepath; // copy
+        svg.path = filepath; // copy
     }
     
 
-    boost::filesystem::path path(shape.svg_file.path);
+    boost::filesystem::path path(svg.path);
     if (!boost::filesystem::exists(path)) {
-        show_error(nullptr, GUI::format(_u8L("File does NOT exist (%1%)."), shape.svg_file.path));
+        show_error(nullptr, GUI::format(_u8L("File does NOT exist (%1%)."), svg.path));
         return {};
     }
 
-    if (!boost::algorithm::iends_with(shape.svg_file.path, ".svg")) {
-        show_error(nullptr, GUI::format(_u8L("Filename has to end with \".svg\" but you selected %1%"), shape.svg_file.path));
+    if (!boost::algorithm::iends_with(svg.path, ".svg")) {
+        show_error(nullptr, GUI::format(_u8L("Filename has to end with \".svg\" but you selected %1%"), svg.path));
         return {};
     }
 
-    if(init_image(shape.svg_file) == nullptr) {
-        show_error(nullptr, GUI::format(_u8L("Nano SVG parser can't load from file (%1%)."), shape.svg_file.path));
+    if(init_image(svg) == nullptr) {
+        show_error(nullptr, GUI::format(_u8L("Nano SVG parser can't load from file (%1%)."), svg.path));
         return {};
     }
 
     // Set default and unchanging scale
     NSVGLineParams params{tesselation_tolerance};
-    shape.shapes_with_ids = create_shape_with_ids(*shape.svg_file.image, params);
+    shape.shapes_with_ids = create_shape_with_ids(*svg.image, params);
 
     // Must contain some shapes !!!
     if (shape.shapes_with_ids.empty()) {
-        show_error(nullptr, GUI::format(_u8L("SVG file does NOT contain a single path to be embossed (%1%)."), shape.svg_file.path));
+        show_error(nullptr, GUI::format(_u8L("SVG file does NOT contain a single path to be embossed (%1%)."), svg.path));
         return {};
     }
+    shape.svg_file = std::move(svg);
     return shape;
 }
 

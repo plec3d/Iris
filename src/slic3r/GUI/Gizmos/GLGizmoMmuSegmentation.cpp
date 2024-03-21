@@ -63,7 +63,7 @@ bool GLGizmoMmuSegmentation::on_is_activable() const
     return GLGizmoPainterBase::on_is_activable() && (wxGetApp().extruders_edited_cnt() > 1 || hasMixingExtruder);
 }
 
-static std::vector<ColorRGBA> get_extruders_colors()
+std::vector<ColorRGBA> get_extruders_colors()
 {
     std::vector<std::string> colors = Slic3r::GUI::wxGetApp().plater()->get_extruder_colors_from_plater_config();
     std::vector<ColorRGBA> ret;
@@ -829,7 +829,7 @@ void GLGizmoMmuSegmentation::update_model_object() const
         if (! mv->is_model_part())
             continue;
         ++idx;
-        updated |= mv->mmu_segmentation_facets.set(*m_triangle_selectors[idx].get());
+        updated |= mv->mm_segmentation_facets.set(*m_triangle_selectors[idx].get());
     }
     
     if (updated) {
@@ -841,7 +841,8 @@ void GLGizmoMmuSegmentation::update_model_object() const
 
 void GLGizmoMmuSegmentation::init_model_triangle_selectors()
 {
-    const ModelObject *mo = m_c->selection_info()->model_object();
+    const int          extruders_count = wxGetApp().extruders_edited_cnt();
+    const ModelObject *mo              = m_c->selection_info()->model_object();
     m_triangle_selectors.clear();
 
     // Don't continue when extruders colors are not initialized
@@ -855,10 +856,10 @@ void GLGizmoMmuSegmentation::init_model_triangle_selectors()
         // This mesh does not account for the possible Z up SLA offset.
         const TriangleMesh *mesh = &mv->mesh();
 
-        int extruder_idx = (mv->extruder_id() > 0) ? mv->extruder_id() - 1 : 0;
-        m_triangle_selectors.emplace_back(std::make_unique<TriangleSelectorMmGui>(*mesh, m_modified_extruders_colors, m_original_extruders_colors[size_t(extruder_idx)]));
+        size_t extruder_idx = get_extruder_color_idx(*mv, extruders_count);
+        m_triangle_selectors.emplace_back(std::make_unique<TriangleSelectorMmGui>(*mesh, m_modified_extruders_colors, m_original_extruders_colors[extruder_idx]));
         // Reset of TriangleSelector is done inside TriangleSelectorMmGUI's constructor, so we don't need it to perform it again in deserialize().
-        m_triangle_selectors.back()->deserialize(mv->mmu_segmentation_facets.get_data(), false);
+        m_triangle_selectors.back()->deserialize(mv->mm_segmentation_facets.get_data(), false);
         m_triangle_selectors.back()->request_update_render_data();
     }
     m_original_volumes_extruder_idxs = get_extruder_id_for_volumes(*mo);
@@ -904,13 +905,8 @@ void TriangleSelectorMmGui::render(ImGuiWrapper* imgui, const Transform3d& matri
     auto *shader = wxGetApp().get_current_shader();
     if (!shader)
         return;
+
     assert(shader->get_name() == "mm_gouraud");
-    const Camera& camera = wxGetApp().plater()->get_camera();
-    const Transform3d& view_matrix = camera.get_view_matrix();
-    shader->set_uniform("view_model_matrix", view_matrix * matrix);
-    shader->set_uniform("projection_matrix", camera.get_projection_matrix());
-    const Matrix3d view_normal_matrix = view_matrix.matrix().block(0, 0, 3, 3) * matrix.matrix().block(0, 0, 3, 3).inverse().transpose();
-    shader->set_uniform("view_normal_matrix", view_normal_matrix);
 
     for (size_t color_idx = 0; color_idx < m_gizmo_scene.triangle_indices.size(); ++color_idx) {
         if (m_gizmo_scene.has_VBOs(color_idx)) {
